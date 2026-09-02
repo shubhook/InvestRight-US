@@ -11,7 +11,7 @@ from llm.llm_client import call_llm
 _logger = logging.getLogger("explanation_agent")
 
 _SYSTEM_PROMPT = (
-    "You are a professional equity analyst explaining a trading signal "
+    "You are a professional US equity analyst explaining a trading signal "
     "to a portfolio manager. Be concise, factual, and specific. "
     "Use plain English. Maximum 3 sentences. No disclaimers. No fluff."
 )
@@ -69,9 +69,9 @@ def generate_explanation(
         f"Generate a trading signal explanation for:\n"
         f"Symbol: {symbol}\n"
         f"Action: {action}\n"
-        f"Entry: ₹{entry:.2f}\n"
-        f"Stop Loss: ₹{stop_loss:.2f} ({max_loss_pct:.1f}% risk)\n"
-        f"Target: ₹{target:.2f} ({rr_ratio:.1f}:1 reward-to-risk)\n"
+        f"Entry: ${entry:.2f}\n"
+        f"Stop Loss: ${stop_loss:.2f} ({max_loss_pct:.1f}% risk)\n"
+        f"Target: ${target:.2f} ({rr_ratio:.1f}:1 reward-to-risk)\n"
         f"Position Size: {pos_pct}% of capital\n\n"
         f"Signals:\n"
         f"- Trend: {trend}\n"

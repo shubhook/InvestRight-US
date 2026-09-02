@@ -91,8 +91,8 @@ def generate_portfolio_summary(
         f"Total Return: {total_return:.2f}%\n"
         f"Win Rate: {win_rate}%\n"
         f"Total Trades: {total_trades}\n"
-        f"Best Trade: {best_sym} +₹{best_pnl}\n"
-        f"Worst Trade: {worst_sym} ₹{worst_pnl}\n"
+        f"Best Trade: {best_sym} +${best_pnl}\n"
+        f"Worst Trade: {worst_sym} ${worst_pnl}\n"
         f"Open Positions: {open_count}\n"
         f"Sharpe Ratio: {sharpe:.3f}\n"
         f"Max Drawdown: {max_dd:.2f}%\n\n"
@@ -143,8 +143,8 @@ def generate_daily_brief(
 
     user_prompt = (
         f"Daily Trading Brief — {date}\n\n"
-        f"Realised P&L Today: ₹{realised:.2f}\n"
-        f"Unrealised P&L: ₹{unrealised:.2f}\n"
+        f"Realised P&L Today: ${realised:.2f}\n"
+        f"Unrealised P&L: ${unrealised:.2f}\n"
         f"Trades Executed Today: {trades_today}\n"
         f"Open Positions: {open_count} ({symbols_open})\n\n"
         "Write a 2-3 sentence daily brief."
@@ -164,8 +164,8 @@ def generate_daily_brief(
 
     return (
         f"Daily brief for {date}: "
-        f"Realised P&L ₹{realised:.2f}, "
-        f"unrealised ₹{unrealised:.2f}, "
+        f"Realised P&L ${realised:.2f}, "
+        f"unrealised ${unrealised:.2f}, "
         f"{trades_today} trades executed, "
         f"{open_count} positions open."
     )
@@ -184,5 +184,5 @@ def _numeric_fallback(portfolio_data: dict, timeframe: str) -> str:
         f"Period: {timeframe}. "
         f"Total return: {total_return:.2f}%. "
         f"Win rate: {win_rate}% over {total_trades} trades. "
-        f"Available capital: ₹{available:,.2f}."
+        f"Available capital: ${available:,.2f}."
     )
