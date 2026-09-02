@@ -54,6 +54,7 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
+      - "8080:80"  # Also expose on :8080 for README compatibility
     volumes:
       - ./frontend:/usr/share/nginx/html:ro
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
