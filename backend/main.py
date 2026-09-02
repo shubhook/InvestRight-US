@@ -733,9 +733,8 @@ def portfolio():
                 summary["capital"]["available_capital"] = alpaca_port["cash"]
                 summary["capital"]["source"] = "alpaca_paper"
                 
-                # Optionally include Alpaca holdings as extra field
-                if alpaca_port.get("holdings"):
-                    summary["alpaca_holdings"] = alpaca_port["holdings"]
+                # Always include Alpaca holdings field (empty list if none)
+                summary["alpaca_holdings"] = alpaca_port.get("holdings", [])
             else:
                 # Alpaca call failed, use local ledger
                 summary["capital"]["source"] = "local_ledger"
@@ -889,6 +888,99 @@ def trades_list():
     except Exception as e:
         logger.error(f"[API] /trades error: {e}")
         return jsonify({"trades": []}), 200
+
+
+@app.route("/cycle/last", methods=["GET"])
+@require_auth
+def cycle_last():
+    """
+    Last cycle results per symbol — read-only.
+    Returns { cycles: [{ symbol, decision, executed, reason, ts }] }
+    """
+    try:
+        from db.connection import db_cursor
+        with db_cursor() as cur:
+            cur.execute(
+                """
+                SELECT symbol, decision, executed, reason, ts
+                FROM cycle_results
+                ORDER BY ts DESC
+                """
+            )
+            rows = cur.fetchall()
+        
+        cycles = []
+        for row in rows:
+            cycles.append({
+                "symbol": row[0],
+                "decision": row[1],
+                "action": row[1],  # alias for frontend
+                "executed": row[2],
+                "reason": row[3],
+                "ts": row[4].isoformat() if row[4] else None,
+                "time": row[4].isoformat() if row[4] else None,  # alias for frontend
+            })
+        
+        return jsonify({"cycles": cycles})
+    except Exception as e:
+        logger.error(f"[API] /cycle/last error: {e}")
+        return jsonify({"cycles": []}), 200
+
+
+@app.route("/cycle/run", methods=["POST"])
+@require_auth
+def cycle_run():
+    """
+    Run watchlist analysis job once (in-process).
+    CAN place Alpaca paper orders if decision is BUY/SELL.
+    Returns { cycles: [...] } with results.
+    """
+    try:
+        from scheduler import get_watchlist_symbols, analysis_job
+        from db.connection import db_cursor
+        
+        symbols = get_watchlist_symbols()
+        if not symbols:
+            return jsonify({"cycles": [], "message": "Watchlist is empty"}), 200
+        
+        logger.info(f"[API] /cycle/run triggered for symbols: {symbols}")
+        
+        # Run analysis for each symbol
+        for symbol in symbols:
+            try:
+                analysis_job(symbol)
+            except Exception as e:
+                logger.error(f"[API] /cycle/run analysis_job({symbol}) error: {e}")
+        
+        # Read back the persisted cycle results
+        with db_cursor() as cur:
+            cur.execute(
+                """
+                SELECT symbol, decision, executed, reason, ts
+                FROM cycle_results
+                WHERE symbol = ANY(%s)
+                ORDER BY ts DESC
+                """,
+                (symbols,)
+            )
+            rows = cur.fetchall()
+        
+        cycles = []
+        for row in rows:
+            cycles.append({
+                "symbol": row[0],
+                "decision": row[1],
+                "action": row[1],
+                "executed": row[2],
+                "reason": row[3],
+                "ts": row[4].isoformat() if row[4] else None,
+                "time": row[4].isoformat() if row[4] else None,
+            })
+        
+        return jsonify({"cycles": cycles, "message": f"Cycle completed for {len(symbols)} symbols"})
+    except Exception as e:
+        logger.error(f"[API] /cycle/run error: {e}")
+        return jsonify({"error": str(e), "cycles": []}), 500
 
 
 @app.route("/portfolio/summary", methods=["GET"])

@@ -49,6 +49,25 @@ services:
       redis:
         condition: service_healthy
 
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    command: python scheduler.py
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://investright:${POSTGRES_PASSWORD:-password}@postgres:5432/investright
+      REDIS_URL:    redis://redis:6379/0
+      SCHEDULE_MINUTES: 1
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   frontend:
     image: nginx:alpine
     restart: unless-stopped
