@@ -372,18 +372,63 @@ function DeskSegment({ session }) {
 // ---------------------------------------------------------------------------
 // Trade Segment
 // ---------------------------------------------------------------------------
-function TradeSegment() {
+function TradeSegment({ session }) {
   const [watchlist, setWatchlist] = useState([]);
   const [symbol, setSymbol] = useState('');
   const [capitalPct, setCapitalPct] = useState(10);
   const [msg, setMsg] = useState('');
+  const [lastCycle, setLastCycle] = useState(null);
+  const [cycleError, setCycleError] = useState('');
+  const [cycleRunning, setCycleRunning] = useState(false);
 
   useEffect(() => {
     loadWatchlist();
+    loadCycle();
   }, []);
 
   function loadWatchlist() {
     apiFetch('/watchlist').then(r => r.json()).then(d => setWatchlist(d.watchlist || [])).catch(() => {});
+  }
+
+  function loadCycle() {
+    apiFetch('/cycle/last')
+      .then(r => {
+        if (!r.ok) {
+          if (r.status === 404) {
+            setCycleError('Cycle endpoint unavailable.');
+          }
+          return null;
+        }
+        return r.json();
+      })
+      .then(data => {
+        if (!data) return;
+        // Extract list from various possible shapes
+        const list = data.decisions || data.results || data.cycles || data.items || (Array.isArray(data) ? data : []);
+        setLastCycle(list);
+        setCycleError('');
+      })
+      .catch(() => {
+        setCycleError('Cycle endpoint unavailable.');
+      });
+  }
+
+  async function runCycle() {
+    setCycleRunning(true);
+    setCycleError('');
+    try {
+      const res = await apiFetch('/cycle/run', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        setCycleError(data.error || 'Cycle run failed');
+      } else {
+        loadCycle();
+      }
+    } catch (err) {
+      setCycleError(err.message || 'Network error');
+    } finally {
+      setCycleRunning(false);
+    }
   }
 
   async function handleAdd(e) {
@@ -482,6 +527,83 @@ function TradeSegment() {
             ))}
           </div>
         )}
+      </div>
+
+      {/* Last Cycle */}
+      <div style={{ background: '#171c22', borderRadius: '10px', padding: '16px', border: '1px solid #2a3340' }}>
+        <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#e8eef4', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }}>
+          Last Cycle
+        </h3>
+        
+        {cycleError ? (
+          <p style={{ fontSize: '14px', color: '#8b9aab', fontStyle: 'italic', marginBottom: '12px' }}>
+            {cycleError}
+          </p>
+        ) : !lastCycle ? (
+          <p style={{ fontSize: '14px', color: '#8b9aab', fontStyle: 'italic', marginBottom: '12px' }}>
+            Loading...
+          </p>
+        ) : lastCycle.length === 0 ? (
+          <p style={{ fontSize: '14px', color: '#8b9aab', fontStyle: 'italic', marginBottom: '12px' }}>
+            No cycle yet. Run one to place Alpaca paper orders.
+          </p>
+        ) : (
+          <div className="space-y-2" style={{ marginBottom: '12px' }}>
+            {lastCycle.map((row, i) => {
+              const action = (row.action || '').toUpperCase();
+              const actionColor = action === 'BUY' ? '#34d399' : action === 'SELL' ? '#f87171' : '#8b9aab';
+              const timeStr = row.time || row.ts || row.created_at || row.decided_at;
+              let displayTime = '';
+              if (timeStr) {
+                try {
+                  const dt = new Date(timeStr);
+                  displayTime = dt.toLocaleString('en-US', { timeZone: 'America/New_York', hour12: false });
+                } catch {
+                  displayTime = timeStr;
+                }
+              }
+              
+              return (
+                <div key={i} style={{ borderBottom: '1px solid #2a3340', paddingBottom: '8px', marginBottom: '8px' }}>
+                  <div className="flex items-center justify-between" style={{ marginBottom: '4px' }}>
+                    <div className="flex items-center gap-2">
+                      <span style={{ fontSize: '14px', fontWeight: '500', color: '#e8eef4' }}>{row.symbol}</span>
+                      <span
+                        className="px-2 py-1 rounded"
+                        style={{ fontSize: '11px', fontWeight: '600', background: actionColor + '33', color: actionColor }}
+                      >
+                        {action || 'UNKNOWN'}
+                      </span>
+                      <span style={{ fontSize: '12px', color: '#8b9aab' }}>
+                        {row.executed ? 'executed' : 'not sent'}
+                      </span>
+                    </div>
+                    {displayTime && (
+                      <span style={{ fontSize: '12px', color: '#8b9aab' }}>{displayTime}</span>
+                    )}
+                  </div>
+                  {row.reason && (
+                    <p style={{ fontSize: '13px', color: '#8b9aab', marginTop: '4px' }}>
+                      {row.reason}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <p style={{ fontSize: '13px', color: '#8b9aab', marginBottom: '8px' }}>
+          Places Alpaca paper orders if the model says buy or sell.
+        </p>
+        <button
+          onClick={runCycle}
+          disabled={cycleRunning || (session && !session.is_rth)}
+          className="px-4 py-2 rounded-lg font-medium disabled:opacity-50"
+          style={{ background: '#6366f1', color: 'white', fontSize: '14px' }}
+        >
+          {cycleRunning ? 'Running…' : 'Run cycle now'}
+        </button>
       </div>
     </div>
   );
@@ -593,7 +715,7 @@ function App() {
       <SegmentControl segment={segment} setSegment={setSegment} />
       <main style={{ flex: 1, overflowY: 'auto' }}>
         {segment === 'Desk' && <DeskSegment session={session} />}
-        {segment === 'Trade' && <TradeSegment />}
+        {segment === 'Trade' && <TradeSegment session={session} />}
         {segment === 'System' && <SystemSegment killActive={killActive} setKillActive={setKillActive} />}
       </main>
       <footer style={{ borderTop: '1px solid #2a3340', padding: '8px 24px', textAlign: 'center', fontSize: '12px', color: '#8b9aab' }}>
