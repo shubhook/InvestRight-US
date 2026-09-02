@@ -96,35 +96,82 @@ function LoginScreen({ onLogin }) {
 // ---------------------------------------------------------------------------
 function Header({ segment, setSegment, killActive, onLogout }) {
   const [session, setSession] = useState(null);
+  const [sessionError, setSessionError] = useState(false);
 
   useEffect(() => {
     function loadSession() {
       fetch(`${API_BASE}/session`)
-        .then(r => r.json())
-        .then(d => setSession(d))
-        .catch(() => {});
+        .then(r => {
+          if (!r.ok) throw new Error('Session endpoint unavailable');
+          return r.json();
+        })
+        .then(d => {
+          setSession(d);
+          setSessionError(false);
+        })
+        .catch(() => {
+          setSessionError(true);
+          setSession(null);
+        });
     }
     loadSession();
     const timer = setInterval(loadSession, 30000);
     return () => clearInterval(timer);
   }, []);
 
-  const etTime = session ? new Date(session.et_iso).toLocaleTimeString('en-US', {
-    timeZone: 'America/New_York',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false
-  }) : '—';
-
-  const istTime = session ? new Date(session.et_iso).toLocaleTimeString('en-US', {
-    timeZone: 'Asia/Kolkata',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false
-  }) : '—';
-
-  const isOpen = session?.is_rth || false;
+  // If session endpoint available, use server data
+  let etTime, istTime, isOpen, clockNote;
+  
+  if (session && !sessionError) {
+    // Use server session data
+    const etDate = new Date(session.et_iso);
+    etTime = etDate.toLocaleTimeString('en-US', {
+      timeZone: 'America/New_York',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    });
+    istTime = etDate.toLocaleTimeString('en-US', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+    isOpen = session.is_rth;
+    clockNote = null;
+  } else {
+    // Degrade: format current time in America/New_York
+    const now = new Date();
+    etTime = now.toLocaleTimeString('en-US', {
+      timeZone: 'America/New_York',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    });
+    istTime = now.toLocaleTimeString('en-US', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+    // Client-side approximation (no holidays)
+    const etHour = parseInt(now.toLocaleTimeString('en-US', {
+      timeZone: 'America/New_York',
+      hour: '2-digit',
+      hour12: false
+    }));
+    const etMinute = parseInt(now.toLocaleTimeString('en-US', {
+      timeZone: 'America/New_York',
+      minute: '2-digit'
+    }));
+    const etDay = now.toLocaleDateString('en-US', { timeZone: 'America/New_York', weekday: 'short' });
+    const isWeekday = !['Sat', 'Sun'].includes(etDay);
+    const inSessionHours = (etHour === 9 && etMinute >= 30) || (etHour > 9 && etHour < 16) || (etHour === 16 && etMinute === 0);
+    isOpen = isWeekday && inSessionHours;
+    clockNote = 'session from clock · holidays on server';
+  }
 
   return (
     <header style={{ background: '#0f1419', borderBottom: '1px solid #2a3340', height: '64px' }}>
@@ -152,6 +199,7 @@ function Header({ segment, setSegment, killActive, onLogout }) {
             </div>
             <div style={{ fontSize: '12px', color: '#8b9aab', marginTop: '2px' }}>
               {isOpen ? 'NYSE Open' : 'NYSE Closed'} · IST {istTime}
+              {clockNote && <span style={{ marginLeft: '8px', opacity: '0.6' }}>· {clockNote}</span>}
             </div>
           </div>
           {!isOpen && (
