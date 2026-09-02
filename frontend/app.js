@@ -84,6 +84,18 @@ function LoginScreen({ onLogin }) {
 }
 
 // ---------------------------------------------------------------------------
+// Helper: USD formatter
+// ---------------------------------------------------------------------------
+function usd(n, { cents = true } = {}) {
+  if (n == null || isNaN(n)) return '—';
+  const formatted = Number(n).toLocaleString('en-US', {
+    minimumFractionDigits: cents ? 2 : 0,
+    maximumFractionDigits: cents ? 2 : 0,
+  });
+  return `$${formatted}`;
+}
+
+// ---------------------------------------------------------------------------
 // NavBar with Session Clock
 // ---------------------------------------------------------------------------
 const TABS = ['Overview', 'Trade Setup', 'Market Sentiment', 'Portfolio', 'Trades', 'Backtest', 'Observability', 'Settings'];
@@ -112,7 +124,8 @@ function SessionClock() {
     hour12: false
   });
 
-  // Determine market status (rough client-side check)
+  // Determine market status (client-side approximation)
+  // Note: Does not account for NYSE holidays; backend market_hours.py is authoritative
   const etHour = parseInt(time.toLocaleTimeString('en-US', { 
     timeZone: 'America/New_York', 
     hour: '2-digit',
@@ -137,30 +150,37 @@ function SessionClock() {
           <div className="text-gray-500">{marketOpen ? 'NYSE Open' : 'NYSE Closed'} · IST {istTime}</div>
         </div>
       </div>
+      {!marketOpen && (
+        <span className="text-xs bg-gray-800 text-gray-400 px-2 py-1 rounded-full font-medium uppercase tracking-wide">
+          NYSE Closed
+        </span>
+      )}
     </div>
   );
 }
 
 function NavBar({ activeTab, setActiveTab, killActive, onLogout }) {
   return (
-    <nav className="bg-gray-900 border-b border-gray-800 px-4 py-2 flex items-center gap-4 flex-wrap">
+    <nav className="bg-gray-900 border-b border-gray-800 px-4 py-2 flex items-center gap-4">
       <span className="font-bold text-brand mr-2 text-lg">InvestRight-US</span>
-      {TABS.map(t => (
-        <button
-          key={t}
-          onClick={() => setActiveTab(t)}
-          className={`text-sm px-3 py-1 rounded-lg transition-colors ${
-            activeTab === t
-              ? 'bg-brand text-white'
-              : 'text-gray-400 hover:text-white'
-          }`}
-        >
-          {t}
-        </button>
-      ))}
-      <div className="ml-auto flex items-center gap-4">
-        <span className="text-xs bg-blue-900 text-blue-300 px-3 py-1 rounded-full font-medium">
-          ALPACA PAPER
+      <div className="flex items-center gap-2 overflow-x-auto">
+        {TABS.map(t => (
+          <button
+            key={t}
+            onClick={() => setActiveTab(t)}
+            className={`text-sm px-3 py-1 rounded-lg transition-colors whitespace-nowrap ${
+              activeTab === t
+                ? 'bg-brand text-white'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+      <div className="ml-auto flex items-center gap-3">
+        <span className="text-xs bg-gray-700 text-gray-300 px-2 py-1 rounded-full font-medium uppercase tracking-wide">
+          Alpaca Paper
         </span>
         <SessionClock />
         {killActive && (
@@ -615,7 +635,7 @@ function BacktestTab() {
           <div>
             <label className="block text-xs text-gray-500 mb-1">Capital (USD)</label>
             <input value={capital} onChange={e => setCapital(e.target.value)}
-              placeholder="100000"
+              placeholder="$100,000"
               className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm w-28 focus:outline-none focus:border-brand" />
           </div>
           <button type="submit" disabled={submitting}
@@ -842,7 +862,7 @@ function TradeSetupTab() {
               placeholder="e.g. AAPL, MSFT, TSLA"
               className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-brand"
             />
-            <p className="text-xs text-gray-600 mt-1">Enter US ticker symbols (no exchange suffix needed)</p>
+            <p className="text-xs text-gray-400 mt-1">Enter US ticker symbols (no exchange suffix needed)</p>
           </div>
 
           <div>
@@ -860,7 +880,7 @@ function TradeSetupTab() {
               onChange={e => setCapitalPct(Number(e.target.value))}
               className="w-full accent-indigo-500"
             />
-            <div className="flex justify-between text-xs text-gray-600 mt-0.5">
+            <div className="flex justify-between text-xs text-gray-400 mt-0.5">
               <span>1%</span>
               <span>50%</span>
               <span>100%</span>
@@ -1148,36 +1168,8 @@ function MarketSentimentTab() {
 function SettingsTab({ health }) {
   return (
     <div className="p-4 space-y-4 max-w-lg">
-      <Card title="Alpaca Paper Trading">
+      <Card title="Alpaca Paper Trading — Keys">
         <div className="space-y-3 text-sm text-gray-300">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="flex items-center justify-center w-12 h-12 rounded-full bg-gray-800">
-              <span className="text-2xl">📄</span>
-            </div>
-            <div>
-              <p className="font-medium text-white">Paper Trading Mode</p>
-              <p className="text-xs text-gray-500">Simulated trades — no real money</p>
-            </div>
-          </div>
-          
-          <div className="bg-gray-800 border border-gray-700 rounded-lg p-3">
-            <p className="font-medium text-white mb-2">Current Status</p>
-            <div className="space-y-2 text-xs">
-              <div className="flex justify-between">
-                <span className="text-gray-400">Mode:</span>
-                <span className="text-white font-medium">Paper Only</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-400">Broker:</span>
-                <span className="text-white">Alpaca Paper API</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-400">Live Trading:</span>
-                <span className="text-red-400">Not Available (v1)</span>
-              </div>
-            </div>
-          </div>
-
           <div className="bg-gray-800 border border-gray-700 rounded-lg p-3">
             <p className="font-medium text-white mb-1">Setup Instructions</p>
             <ol className="list-decimal ml-4 space-y-1 text-xs text-gray-400">
@@ -1286,8 +1278,8 @@ function App() {
         {activeTab === 'Observability'  && <ObservabilityTab />}
         {activeTab === 'Settings'       && <SettingsTab health={health} />}
       </main>
-      <footer className="text-center text-xs text-gray-700 py-2">
-        InvestRight · Auto-refreshes every 30s
+      <footer className="border-t border-gray-800 px-4 py-2 text-center text-xs text-gray-500">
+        InvestRight-US · Alpaca paper · 30s refresh
       </footer>
     </div>
   );
