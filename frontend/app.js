@@ -319,18 +319,21 @@ function DeskSegment({ session }) {
           </p>
         ) : (
           <div className="space-y-2">
-            {holdings.map(h => (
-              <div key={h.symbol} className="flex items-center justify-between py-2" style={{ borderBottom: '1px solid #2a3340' }}>
-                <div className="flex items-center gap-3">
-                  <span style={{ fontSize: '14px', fontWeight: '500', color: '#e8eef4' }}>{h.symbol}</span>
-                  <span style={{ fontSize: '13px', color: '#8b9aab' }}>{h.quantity}</span>
-                  <span style={{ fontSize: '13px', color: '#8b9aab' }}>{usd(h.avg_entry_price)}</span>
+            {holdings.map(h => {
+              const qty = Number(h.qty ?? h.quantity);
+              return (
+                <div key={h.symbol} className="flex items-center justify-between py-2" style={{ borderBottom: '1px solid #2a3340' }}>
+                  <div className="flex items-center gap-3">
+                    <span style={{ fontSize: '14px', fontWeight: '500', color: '#e8eef4' }}>{h.symbol}</span>
+                    <span style={{ fontSize: '13px', color: '#8b9aab' }}>{qty}</span>
+                    <span style={{ fontSize: '13px', color: '#8b9aab' }}>{usd(h.avg_entry_price)}</span>
+                  </div>
+                  <span style={{ fontSize: '14px', color: (h.unrealized_pl || 0) >= 0 ? '#34d399' : '#f87171' }}>
+                    {usd(h.unrealized_pl)}
+                  </span>
                 </div>
-                <span style={{ fontSize: '14px', color: (h.unrealized_pl || 0) >= 0 ? '#34d399' : '#f87171' }}>
-                  {usd(h.unrealized_pl)}
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
