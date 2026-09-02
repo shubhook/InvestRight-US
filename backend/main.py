@@ -1232,5 +1232,18 @@ def run(symbol: str) -> dict:
 if __name__ == "__main__":
     from config import validate_required_env
     validate_required_env()
+    
+    # Fail-fast: verify database connection at startup
+    try:
+        from db.connection import db_cursor
+        with db_cursor() as cur:
+            cur.execute("SELECT 1")
+        logger.info("[STARTUP] Database connection verified")
+    except Exception as e:
+        logger.critical(f"[STARTUP] Database connection failed: {e}")
+        logger.critical("[STARTUP] Ensure PostgreSQL is running and DATABASE_URL is correct")
+        import sys
+        sys.exit(1)
+    
     debug_mode = os.getenv("FLASK_DEBUG", "false").lower() == "true"
     app.run(debug=debug_mode, host="0.0.0.0", port=5001)
