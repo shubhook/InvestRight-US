@@ -1,0 +1,15 @@
+Flask
+flask-cors
+python-dotenv
+yfinance
+requests
+pandas
+numpy
+schedule
+feedparser
+psycopg2-binary
+redis
+PyJWT
+kiteconnect
+groq
+pytz
