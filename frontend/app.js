@@ -3,7 +3,8 @@ const { useState, useEffect, useRef, useCallback } = React;
 // ---------------------------------------------------------------------------
 // Config & Auth
 // ---------------------------------------------------------------------------
-const API_BASE = 'http://localhost:5001';
+// API routing: use /api for same-origin (nginx proxy in docker), or direct backend for local dev
+const API_BASE = window.location.port === '8080' ? 'http://localhost:5001' : '/api';
 
 function getToken() { return localStorage.getItem('ir_token'); }
 function setToken(t) { localStorage.setItem('ir_token', t); }
@@ -395,8 +396,9 @@ function TradeSegment() {
       } else {
         setMsg(`Error: ${data.error}`);
       }
-    } catch {
-      setMsg('Network error');
+    } catch (err) {
+      // Network error (fetch failed) or JSON parse error
+      setMsg(err.message || 'Network error');
     }
   }
 
@@ -540,10 +542,10 @@ function App() {
   useEffect(() => {
     if (!loggedIn) return;
     function loadSession() {
-      fetch(`${API_BASE}/session`).then(r => r.json()).then(d => setSession(d)).catch(() => {});
+      fetch('/api/session').then(r => r.json()).then(d => setSession(d)).catch(() => {});
     }
     function loadHealth() {
-      fetch(`${API_BASE}/health`).then(r => r.json()).then(d => setKillActive(!!d.kill_switch)).catch(() => {});
+      fetch('/api/health').then(r => r.json()).then(d => setKillActive(!!d.kill_switch)).catch(() => {});
     }
     loadSession();
     loadHealth();

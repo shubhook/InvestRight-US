@@ -46,8 +46,13 @@ _JWT_EXPIRY_HOURS = int(os.getenv("JWT_EXPIRY_HOURS", 24))
 app = Flask(__name__)
 
 # CORS — allow origins from CORS_ORIGINS env var (comma-separated)
+# Explicitly allow Authorization and Content-Type headers for preflight
 _cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:8080")
-CORS(app, origins=[o.strip() for o in _cors_origins.split(",") if o.strip()])
+CORS(app, 
+     origins=[o.strip() for o in _cors_origins.split(",") if o.strip()],
+     allow_headers=["Authorization", "Content-Type"],
+     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+     supports_credentials=True)
 
 
 def _rate_limit_check(endpoint: str):
