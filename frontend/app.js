@@ -141,7 +141,7 @@ function Header({ segment, setSegment, killActive, onLogout }) {
     isOpen = session.is_rth;
     clockNote = null;
   } else {
-    // Degrade: format current time in America/New_York
+    // Degrade: show ET time with note, no client-side RTH computation
     const now = new Date();
     etTime = now.toLocaleTimeString('en-US', {
       timeZone: 'America/New_York',
@@ -156,21 +156,8 @@ function Header({ segment, setSegment, killActive, onLogout }) {
       minute: '2-digit',
       hour12: false
     });
-    // Client-side approximation (no holidays)
-    const etHour = parseInt(now.toLocaleTimeString('en-US', {
-      timeZone: 'America/New_York',
-      hour: '2-digit',
-      hour12: false
-    }));
-    const etMinute = parseInt(now.toLocaleTimeString('en-US', {
-      timeZone: 'America/New_York',
-      minute: '2-digit'
-    }));
-    const etDay = now.toLocaleDateString('en-US', { timeZone: 'America/New_York', weekday: 'short' });
-    const isWeekday = !['Sat', 'Sun'].includes(etDay);
-    const inSessionHours = (etHour === 9 && etMinute >= 30) || (etHour > 9 && etHour < 16) || (etHour === 16 && etMinute === 0);
-    isOpen = isWeekday && inSessionHours;
-    clockNote = 'session from clock · holidays on server';
+    isOpen = false; // Unknown without server
+    clockNote = 'holidays on server';
   }
 
   return (
