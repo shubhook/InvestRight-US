@@ -154,8 +154,11 @@ function NavBar({ activeTab, setActiveTab, killActive, onLogout }) {
         >
           {t}
         </button>
-      </invoke>
+      ))}
       <div className="ml-auto flex items-center gap-4">
+        <span className="text-xs bg-blue-900 text-blue-300 px-3 py-1 rounded-full font-medium">
+          ALPACA PAPER
+        </span>
         <SessionClock />
         {killActive && (
           <span className="text-xs bg-red-900 text-red-300 px-2 py-1 rounded-full animate-pulse">
