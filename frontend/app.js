@@ -755,9 +755,6 @@ function ObservabilityTab() {
 // ---------------------------------------------------------------------------
 function TradeSetupTab() {
   const [watchlist,    setWatchlist]    = useState([]);
-  const [liveHoldings, setLiveHoldings] = useState(null);
-  const [liveErr,      setLiveErr]      = useState('');
-  const [loadingLive,  setLoadingLive]  = useState(false);
 
   // form state
   const [symbol,     setSymbol]     = useState('');
@@ -788,31 +785,6 @@ function TradeSetupTab() {
     loadWatchlist();
     loadPortfolioCapital();
   }, []);
-
-  async function fetchLiveHoldings() {
-    setLoadingLive(true);
-    setLiveErr('');
-    try {
-      const res  = await apiFetch('/portfolio/live');
-      const data = await res.json();
-      if (res.ok) {
-        setLiveHoldings(data);
-      } else {
-        setLiveErr(data.error || 'Failed to fetch');
-      }
-    } catch {
-      setLiveErr('Network error');
-    } finally {
-      setLoadingLive(false);
-    }
-  }
-
-  function pickFromHolding(sym) {
-    // Remove any exchange suffixes for US tickers
-    const cleaned = sym.split('.')[0].toUpperCase();
-    setSymbol(cleaned);
-    setFormMsg('');
-  }
 
   async function handleAdd(e) {
     e.preventDefault();
