@@ -56,8 +56,8 @@ function LoginScreen({ onLogin }) {
   return (
     <div className="flex items-center justify-center min-h-screen">
       <div className="bg-gray-900 border border-gray-800 rounded-2xl p-8 w-full max-w-sm shadow-2xl">
-        <h1 className="text-2xl font-bold text-center mb-2 text-brand">InvestRight</h1>
-        <p className="text-gray-400 text-sm text-center mb-6">AI-Powered Trading Dashboard</p>
+        <h1 className="text-2xl font-bold text-center mb-2 text-brand">InvestRight-US</h1>
+        <p className="text-gray-400 text-sm text-center mb-6">US Paper Trading Dashboard (Alpaca)</p>
         <form onSubmit={handleLogin} className="space-y-4">
           <input
             type="password"
@@ -88,7 +88,7 @@ const TABS = ['Overview', 'Trade Setup', 'Market Sentiment', 'Portfolio', 'Trade
 function NavBar({ activeTab, setActiveTab, killActive, onLogout }) {
   return (
     <nav className="bg-gray-900 border-b border-gray-800 px-4 py-2 flex items-center gap-4 flex-wrap">
-      <span className="font-bold text-brand mr-2 text-lg">InvestRight</span>
+      <span className="font-bold text-brand mr-2 text-lg">InvestRight-US</span>
       {TABS.map(t => (
         <button
           key={t}
@@ -312,14 +312,14 @@ function OverviewTab({ health, portfolio, killActive, setKillActive, showModal, 
       </div>
 
       {/* Capital */}
-      <Card title="Capital">
+      <Card title="Capital (USD)">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Stat label="Total" value={cap.total_capital != null ? `₹${Number(cap.total_capital).toLocaleString()}` : '—'} />
-          <Stat label="Available" value={cap.available_capital != null ? `₹${Number(cap.available_capital).toLocaleString()}` : '—'} color="text-blue-300" />
-          <Stat label="Deployed" value={cap.deployed_capital != null ? `₹${Number(cap.deployed_capital).toLocaleString()}` : '—'} color="text-yellow-300" />
+          <Stat label="Total" value={cap.total_capital != null ? `$${Number(cap.total_capital).toLocaleString()}` : '—'} />
+          <Stat label="Available" value={cap.available_capital != null ? `$${Number(cap.available_capital).toLocaleString()}` : '—'} color="text-blue-300" />
+          <Stat label="Deployed" value={cap.deployed_capital != null ? `$${Number(cap.deployed_capital).toLocaleString()}` : '—'} color="text-yellow-300" />
           <Stat
             label="Realised P&L"
-            value={pnl.total_realised_pnl != null ? `₹${Number(pnl.total_realised_pnl).toLocaleString()}` : '—'}
+            value={pnl.total_realised_pnl != null ? `$${Number(pnl.total_realised_pnl).toLocaleString()}` : '—'}
             color={pnl.total_realised_pnl >= 0 ? 'text-green-400' : 'text-red-400'}
           />
         </div>
@@ -330,8 +330,8 @@ function OverviewTab({ health, portfolio, killActive, setKillActive, showModal, 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Stat label="Total Trades" value={stats.total_trades ?? '—'} />
           <Stat label="Win Rate" value={stats.win_rate != null ? `${(stats.win_rate * 100).toFixed(1)}%` : '—'} color="text-green-400" />
-          <Stat label="Avg Win" value={stats.avg_win != null ? `₹${Number(stats.avg_win).toFixed(0)}` : '—'} color="text-green-400" />
-          <Stat label="Avg Loss" value={stats.avg_loss != null ? `₹${Number(stats.avg_loss).toFixed(0)}` : '—'} color="text-red-400" />
+          <Stat label="Avg Win" value={stats.avg_win != null ? `$${Number(stats.avg_win).toFixed(0)}` : '—'} color="text-green-400" />
+          <Stat label="Avg Loss" value={stats.avg_loss != null ? `$${Number(stats.avg_loss).toFixed(0)}` : '—'} color="text-red-400" />
         </div>
       </Card>
 
@@ -381,7 +381,7 @@ function PortfolioTab() {
       <div className="flex items-center gap-3">
         <h2 className="text-sm font-semibold text-gray-300">Open Positions ({pos.length})</h2>
         <span className="text-xs text-gray-500">
-          Unrealised P&L: {positions?.total_unrealised_pnl != null ? `₹${Number(positions.total_unrealised_pnl).toFixed(2)}` : '—'}
+          Unrealised P&L: {positions?.total_unrealised_pnl != null ? `$${Number(positions.total_unrealised_pnl).toFixed(2)}` : '—'}
         </span>
       </div>
       {pos.length === 0 ? (
@@ -411,7 +411,7 @@ function PortfolioTab() {
                   <td className="py-2 pr-4 text-right text-red-400">{p.stop_loss}</td>
                   <td className="py-2 pr-4 text-right text-green-400">{p.target}</td>
                   <td className={`py-2 pr-4 text-right ${Number(p.unrealised_pnl) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                    ₹{Number(p.unrealised_pnl || 0).toFixed(2)}
+                    ${Number(p.unrealised_pnl || 0).toFixed(2)}
                   </td>
                   <td className="py-2"><Badge status={p.status} /></td>
                 </tr>
@@ -707,7 +707,7 @@ function TradeSetupTab() {
   const [formMsg,    setFormMsg]    = useState('');
   const [saving,     setSaving]     = useState(false);
 
-  // total capital from portfolio (for ₹ display)
+  // total capital from portfolio (for $ display)
   const [totalCapital, setTotalCapital] = useState(0);
 
   async function loadWatchlist() {
@@ -750,9 +750,9 @@ function TradeSetupTab() {
   }
 
   function pickFromHolding(sym) {
-    // Zerodha returns plain ticker (e.g. "RELIANCE") — append .NS
-    const formatted = sym.includes('.') ? sym : `${sym}.NS`;
-    setSymbol(formatted);
+    // Remove any exchange suffixes for US tickers
+    const cleaned = sym.split('.')[0].toUpperCase();
+    setSymbol(cleaned);
     setFormMsg('');
   }
 
@@ -788,8 +788,8 @@ function TradeSetupTab() {
     } catch { /* ignore */ }
   }
 
-  const rupeeAmt = totalCapital > 0
-    ? `≈ ₹${Math.round(totalCapital * capitalPct / 100).toLocaleString('en-IN')}`
+  const dollarAmt = totalCapital > 0
+    ? `≈ $${Math.round(totalCapital * capitalPct / 100).toLocaleString('en-US')}`
     : '';
 
   const allocatedPct = watchlist.filter(w => w.is_active).reduce((s, w) => s + w.capital_pct, 0);
@@ -797,10 +797,10 @@ function TradeSetupTab() {
   return (
     <div className="p-4 space-y-4 max-w-3xl">
 
-      {/* Live Zerodha Holdings */}
-      <Card title="Your Zerodha Portfolio">
+      {/* Live Alpaca Holdings */}
+      <Card title="Your Alpaca Portfolio">
         <p className="text-xs text-gray-500 mb-3">
-          Fetch your live holdings from Zerodha to quickly pick stocks for today's trading.
+          Fetch your live holdings from Alpaca to see your current positions.
         </p>
         <button
           onClick={fetchLiveHoldings}
@@ -818,7 +818,7 @@ function TradeSetupTab() {
             )}
             {liveHoldings.holdings && liveHoldings.holdings.length > 0 && (
               <div>
-                <p className="text-xs text-gray-500 mb-2 uppercase tracking-wider">Holdings (Delivery)</p>
+                <p className="text-xs text-gray-500 mb-2 uppercase tracking-wider">Holdings</p>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>
@@ -836,10 +836,10 @@ function TradeSetupTab() {
                         <tr key={h.symbol} className="border-b border-gray-800/40 hover:bg-gray-800/30">
                           <td className="py-1 pr-3 font-medium text-white">{h.symbol}</td>
                           <td className="text-right pr-3 text-gray-300">{h.quantity}</td>
-                          <td className="text-right pr-3 text-gray-300">₹{h.avg_price?.toFixed(2)}</td>
-                          <td className="text-right pr-3 text-gray-300">₹{h.last_price?.toFixed(2)}</td>
+                          <td className="text-right pr-3 text-gray-300">${h.avg_price?.toFixed(2)}</td>
+                          <td className="text-right pr-3 text-gray-300">${h.last_price?.toFixed(2)}</td>
                           <td className={`text-right pr-3 font-medium ${h.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                            {h.pnl >= 0 ? '+' : ''}₹{h.pnl?.toFixed(0)}
+                            {h.pnl >= 0 ? '+' : ''}${h.pnl?.toFixed(0)}
                           </td>
                           <td className="text-right">
                             <button
@@ -858,7 +858,7 @@ function TradeSetupTab() {
             )}
             {liveHoldings.positions && liveHoldings.positions.length > 0 && (
               <div>
-                <p className="text-xs text-gray-500 mb-2 uppercase tracking-wider">Intraday Positions</p>
+                <p className="text-xs text-gray-500 mb-2 uppercase tracking-wider">Current Positions</p>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>
@@ -876,10 +876,10 @@ function TradeSetupTab() {
                         <tr key={p.symbol} className="border-b border-gray-800/40 hover:bg-gray-800/30">
                           <td className="py-1 pr-3 font-medium text-white">{p.symbol}</td>
                           <td className="text-right pr-3 text-gray-300">{p.quantity}</td>
-                          <td className="text-right pr-3 text-gray-300">₹{p.avg_price?.toFixed(2)}</td>
-                          <td className="text-right pr-3 text-gray-300">₹{p.last_price?.toFixed(2)}</td>
+                          <td className="text-right pr-3 text-gray-300">${p.avg_price?.toFixed(2)}</td>
+                          <td className="text-right pr-3 text-gray-300">${p.last_price?.toFixed(2)}</td>
                           <td className={`text-right pr-3 font-medium ${p.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                            {p.pnl >= 0 ? '+' : ''}₹{p.pnl?.toFixed(0)}
+                            {p.pnl >= 0 ? '+' : ''}${p.pnl?.toFixed(0)}
                           </td>
                           <td className="text-right">
                             <button
@@ -897,7 +897,7 @@ function TradeSetupTab() {
               </div>
             )}
             {liveHoldings.holdings?.length === 0 && liveHoldings.positions?.length === 0 && !liveHoldings.note && (
-              <p className="text-gray-500 text-xs">No holdings or positions found in your Zerodha account.</p>
+              <p className="text-gray-500 text-xs">No holdings or positions found in your Alpaca account.</p>
             )}
           </div>
         )}
@@ -912,17 +912,17 @@ function TradeSetupTab() {
               type="text"
               value={symbol}
               onChange={e => setSymbol(e.target.value.toUpperCase())}
-              placeholder="e.g. RELIANCE.NS"
+              placeholder="e.g. AAPL, MSFT, TSLA"
               className="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-brand"
             />
-            <p className="text-xs text-gray-600 mt-1">Use .NS for NSE, .BO for BSE. Or click Select above.</p>
+            <p className="text-xs text-gray-600 mt-1">Enter US ticker symbols (no exchange suffix needed)</p>
           </div>
 
           <div>
             <div className="flex justify-between items-center mb-1">
               <label className="text-xs text-gray-500">Capital Allocation</label>
               <span className="text-sm font-bold text-white">
-                {capitalPct}% {rupeeAmt && <span className="text-gray-400 font-normal text-xs">{rupeeAmt}</span>}
+                {capitalPct}% {dollarAmt && <span className="text-gray-400 font-normal text-xs">{dollarAmt}</span>}
               </span>
             </div>
             <input
@@ -990,7 +990,7 @@ function TradeSetupTab() {
                     <span className="text-sm font-bold text-indigo-400">{w.capital_pct}%</span>
                     {totalCapital > 0 && (
                       <span className="text-xs text-gray-500 ml-1">
-                        ₹{Math.round(totalCapital * w.capital_pct / 100).toLocaleString('en-IN')}
+                        ${Math.round(totalCapital * w.capital_pct / 100).toLocaleString('en-US')}
                       </span>
                     )}
                   </div>
@@ -1219,46 +1219,17 @@ function MarketSentimentTab() {
 // Tab: Settings
 // ---------------------------------------------------------------------------
 function SettingsTab({ health }) {
-  const [connecting,   setConnecting]   = useState(false);
-  const [kiteMsg,      setKiteMsg]      = useState('');
   const [brokerMode,   setBrokerMode]   = useState(null);
   const [modeMsg,      setModeMsg]      = useState('');
   const [togglingMode, setTogglingMode] = useState(false);
 
-  // Read ?kite= param from URL after OAuth redirect back from Zerodha
-  const urlParams  = new URLSearchParams(window.location.search);
-  const kiteStatus = urlParams.get('kite');
-
-  // Clean the URL param after reading it (only once on mount)
+  // Load current broker mode
   useEffect(() => {
-    if (kiteStatus) {
-      const clean = window.location.pathname;
-      window.history.replaceState({}, '', clean);
-    }
-    // Load current broker mode
     apiFetch('/broker/status')
       .then(r => r.json())
       .then(d => setBrokerMode(d.broker_mode || 'paper'))
       .catch(() => {});
   }, []);
-
-  async function connectZerodha() {
-    setConnecting(true);
-    setKiteMsg('');
-    try {
-      const res  = await fetch(`${API_BASE}/kite/login`);
-      const data = await res.json();
-      if (res.ok && data.login_url) {
-        window.location.href = data.login_url;
-      } else {
-        setKiteMsg(`Error: ${data.error || 'Could not get login URL'}`);
-        setConnecting(false);
-      }
-    } catch {
-      setKiteMsg('Network error — is the backend running?');
-      setConnecting(false);
-    }
-  }
 
   async function toggleMode() {
     const target = brokerMode === 'live' ? 'paper' : 'live';
@@ -1282,51 +1253,27 @@ function SettingsTab({ health }) {
     }
   }
 
-  const kt = health?.kite_token;
-
   return (
     <div className="p-4 space-y-4 max-w-lg">
-      <Card title="Zerodha Account Connection">
-        {/* OAuth return status banner */}
-        {kiteStatus === 'connected' && (
-          <div className="bg-green-900/40 border border-green-700 rounded-lg px-4 py-3 mb-4 text-green-300 text-sm">
-            Zerodha connected successfully! Token is active until 6:00 AM IST.
+      <Card title="Alpaca Paper Trading">
+        <div className="space-y-3 text-sm text-gray-300">
+          <p>
+            This system uses <strong className="text-white">Alpaca Paper Trading</strong> for US equities.
+            Paper trading simulates real orders without risking actual money.
+          </p>
+          <div className="bg-gray-800 border border-gray-700 rounded-lg p-3">
+            <p className="font-medium text-white mb-1">Setup Instructions:</p>
+            <ol className="list-decimal ml-4 space-y-1 text-xs text-gray-400">
+              <li>Sign up for a free Alpaca account at <a href="https://alpaca.markets/" target="_blank" rel="noopener noreferrer" className="text-brand underline">alpaca.markets</a></li>
+              <li>Navigate to Paper Trading dashboard</li>
+              <li>Generate API keys (API Key ID + Secret Key)</li>
+              <li>Add keys to your <code className="bg-gray-900 px-1 rounded">ALPACA_API_KEY</code> and <code className="bg-gray-900 px-1 rounded">ALPACA_SECRET_KEY</code> environment variables</li>
+              <li>Restart the backend to activate paper trading</li>
+            </ol>
           </div>
-        )}
-        {kiteStatus === 'failed' && (
-          <div className="bg-red-900/40 border border-red-700 rounded-lg px-4 py-3 mb-4 text-red-300 text-sm">
-            Zerodha connection failed. Make sure your Redirect URL in Zerodha developer console is set to <code className="bg-gray-800 px-1 rounded">http://localhost:5001/kite/callback</code>
-          </div>
-        )}
-
-        {/* Current token status */}
-        <div className={`flex items-center gap-2 mb-4 text-sm ${kt?.valid ? 'text-green-400' : 'text-red-400'}`}>
-          <span className={`w-2 h-2 rounded-full ${kt?.valid ? 'bg-green-400' : 'bg-red-400'}`} />
-          {kt?.valid
-            ? `Connected — token valid until ${kt.valid_until ? new Date(kt.valid_until).toLocaleString() : '6:00 AM IST'}`
-            : 'Not connected — click below to link your Zerodha account'}
-        </div>
-
-        <button
-          onClick={connectZerodha}
-          disabled={connecting}
-          className="w-full bg-brand hover:bg-brand-dark disabled:opacity-50 text-white py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
-        >
-          {connecting ? <><Spinner /> Redirecting to Zerodha…</> : 'Connect Zerodha Account'}
-        </button>
-
-        {kiteMsg && <p className="text-red-400 text-xs mt-2">{kiteMsg}</p>}
-
-        <div className="mt-4 pt-4 border-t border-gray-800 space-y-1 text-xs text-gray-500">
-          <p>How it works:</p>
-          <ol className="list-decimal list-inside space-y-1 text-gray-600">
-            <li>Click the button above → you'll be taken to Zerodha's login page</li>
-            <li>Log in with your Zerodha credentials</li>
-            <li>You'll be redirected back here automatically</li>
-            <li>Repeat every morning — Zerodha tokens expire at 6:00 AM IST daily</li>
-          </ol>
-          <p className="pt-2 text-gray-600">
-            Prerequisites: Set <code className="bg-gray-800 px-1 rounded">KITE_API_SECRET</code> in your <code className="bg-gray-800 px-1 rounded">.env</code> file and set Redirect URL to <code className="bg-gray-800 px-1 rounded">http://localhost:5001/kite/callback</code> in your Zerodha developer console.
+          <p className="text-yellow-400 text-xs">
+            <strong>Note:</strong> Without Alpaca credentials, orders are logged locally but not sent to Alpaca's paper environment.
+            For realistic simulation, add your paper trading keys.
           </p>
         </div>
       </Card>
@@ -1341,30 +1288,24 @@ function SettingsTab({ health }) {
             </span>
             <p className="text-xs text-gray-500 mt-2">
               {brokerMode === 'live'
-                ? 'Real orders are being placed via Zerodha'
-                : 'Simulated trades — no real money at risk'}
+                ? 'Live Alpaca trading (not implemented in v1 — paper only)'
+                : 'Paper trading — simulated trades, no real money'}
             </p>
           </div>
           <button
             onClick={toggleMode}
-            disabled={togglingMode || !brokerMode}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 ${
-              brokerMode === 'live'
-                ? 'bg-gray-700 hover:bg-gray-600 text-white'
-                : 'bg-green-800 hover:bg-green-700 text-green-100'
-            }`}
+            disabled={true}
+            className="px-4 py-2 rounded-lg text-sm font-medium transition-colors opacity-50 bg-gray-700 text-white cursor-not-allowed"
           >
-            {togglingMode ? 'Switching…' : `Switch to ${brokerMode === 'live' ? 'Paper' : 'Live'}`}
+            Paper Only
           </button>
         </div>
         {modeMsg && (
           <p className="text-red-400 text-xs mt-1">{modeMsg}</p>
         )}
-        {brokerMode === 'live' && (
-          <p className="text-yellow-500 text-xs mt-2">
-            Live mode is active. All trades will place real orders on your Zerodha account.
-          </p>
-        )}
+        <p className="text-gray-500 text-xs mt-2">
+          This US adaptation is paper-only. Live Alpaca trading is not implemented in v1.
+        </p>
       </Card>
 
       <Card title="System Info">

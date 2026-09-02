@@ -15,6 +15,13 @@ DEFAULT_CAPITAL_LIMIT = float(os.getenv('DEFAULT_CAPITAL_LIMIT', 10.0))
 
 BROKER_MODE    = os.getenv('BROKER_MODE', 'paper')
 TOTAL_CAPITAL  = float(os.getenv('TOTAL_CAPITAL', 0))
+
+# Alpaca Paper Trading credentials (for US markets)
+ALPACA_API_KEY    = os.getenv('ALPACA_API_KEY')
+ALPACA_SECRET_KEY = os.getenv('ALPACA_SECRET_KEY')
+ALPACA_PAPER      = os.getenv('ALPACA_PAPER', 'true')
+
+# Legacy Kite credentials (for reference, not default)
 KITE_API_KEY    = os.getenv('KITE_API_KEY')
 KITE_API_SECRET = os.getenv('KITE_API_SECRET')
 KITE_ACCESS_TOKEN = os.getenv('KITE_ACCESS_TOKEN')
@@ -27,6 +34,10 @@ def validate_required_env():
     """
     Call this from main.py and scheduler.py at startup — not at import time.
     Raises EnvironmentError with a clear message if required vars are missing.
+    
+    Note: Alpaca credentials are optional at startup for testing purposes.
+    The broker will operate in fallback mode if credentials are missing,
+    but real paper trading requires valid Alpaca Paper API credentials.
     """
     missing = []
     if not JWT_SECRET:

@@ -13,3 +13,4 @@ PyJWT
 kiteconnect
 groq
 pytz
+alpaca-py
