@@ -533,13 +533,18 @@ def broker_status():
     alpaca_key_set    = bool(os.getenv("ALPACA_API_KEY") and os.getenv("ALPACA_SECRET_KEY"))
     alpaca_paper_mode = os.getenv("ALPACA_PAPER", "true").lower() == "true"
 
+    if alpaca_key_set:
+        note = "Alpaca paper trading via paper-api.alpaca.markets. Orders are real paper orders."
+    else:
+        note = "Alpaca credentials not configured. Orders will fail until keys are set."
+
     status = {
         "broker_mode":              broker_mode,
         "kill_switch":              halted,
         "total_capital":            total_capital,
         "alpaca_keys_configured":   alpaca_key_set,
         "alpaca_paper":             alpaca_paper_mode,
-        "note": "Alpaca paper trading for US equities. No real orders placed."
+        "note": note
     }
 
     return jsonify(status)
@@ -746,28 +751,6 @@ def close_position_manual(position_id):
         return jsonify({"error": "Internal server error", "details": str(e)}), 500
 
 
-@app.route("/portfolio/live", methods=["GET"])
-@require_auth
-def portfolio_live():
-    """
-    Fetch live holdings and intraday positions directly from Zerodha.
-    Only works in live broker mode with a valid Kite token.
-    """
-    try:
-        from broker.broker_factory import get_broker
-        from broker.kite_broker import KiteBroker
-        broker = get_broker()
-        if not isinstance(broker, KiteBroker):
-            return jsonify({
-                "holdings":  [],
-                "positions": [],
-                "note":      "Live portfolio fetch only available in live broker mode.",
-            })
-        result = broker.get_portfolio()
-        return jsonify(result)
-    except Exception as e:
-        logger.error(f"[API] /portfolio/live error: {e}")
-        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/portfolio/pnl", methods=["GET"])
