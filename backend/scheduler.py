@@ -71,7 +71,7 @@ def snapshot_job():
 
 
 def log_retention_job():
-    """Delete aged rows from ephemeral log tables (runs at 02:00 IST)."""
+    """Delete aged rows from ephemeral log tables (runs at 02:00 ET)."""
     logger.info("[SCHEDULER] Running log retention")
     try:
         from maintenance.log_retention import run_retention
