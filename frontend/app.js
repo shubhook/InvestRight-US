@@ -81,9 +81,62 @@ function LoginScreen({ onLogin }) {
 }
 
 // ---------------------------------------------------------------------------
-// NavBar
+// NavBar with Session Clock
 // ---------------------------------------------------------------------------
 const TABS = ['Overview', 'Trade Setup', 'Market Sentiment', 'Portfolio', 'Trades', 'Backtest', 'Observability', 'Settings'];
+
+function SessionClock() {
+  const [time, setTime] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Convert to ET and IST
+  const etTime = time.toLocaleTimeString('en-US', { 
+    timeZone: 'America/New_York', 
+    hour: '2-digit', 
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  });
+  
+  const istTime = time.toLocaleTimeString('en-US', { 
+    timeZone: 'Asia/Kolkata', 
+    hour: '2-digit', 
+    minute: '2-digit',
+    hour12: false
+  });
+
+  // Determine market status (rough client-side check)
+  const etHour = parseInt(time.toLocaleTimeString('en-US', { 
+    timeZone: 'America/New_York', 
+    hour: '2-digit',
+    hour12: false
+  }));
+  const etMinute = parseInt(time.toLocaleTimeString('en-US', { 
+    timeZone: 'America/New_York', 
+    minute: '2-digit'
+  }));
+  const etDay = time.toLocaleDateString('en-US', { timeZone: 'America/New_York', weekday: 'short' });
+  
+  const isWeekday = !['Sat', 'Sun'].includes(etDay);
+  const inSessionHours = (etHour === 9 && etMinute >= 30) || (etHour > 9 && etHour < 16) || (etHour === 16 && etMinute === 0);
+  const marketOpen = isWeekday && inSessionHours;
+
+  return (
+    <div className="flex items-center gap-3 text-xs">
+      <div className="flex items-center gap-2">
+        <span className={`w-2 h-2 rounded-full ${marketOpen ? 'bg-green-400 animate-pulse' : 'bg-gray-600'}`} />
+        <div>
+          <div className="text-white font-medium">ET {etTime}</div>
+          <div className="text-gray-500">{marketOpen ? 'NYSE Open' : 'NYSE Closed'} · IST {istTime}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function NavBar({ activeTab, setActiveTab, killActive, onLogout }) {
   return (
@@ -101,8 +154,9 @@ function NavBar({ activeTab, setActiveTab, killActive, onLogout }) {
         >
           {t}
         </button>
-      ))}
-      <div className="ml-auto flex items-center gap-3">
+      </invoke>
+      <div className="ml-auto flex items-center gap-4">
+        <SessionClock />
         {killActive && (
           <span className="text-xs bg-red-900 text-red-300 px-2 py-1 rounded-full animate-pulse">
             KILL SWITCH ON
@@ -493,7 +547,7 @@ function BacktestTab() {
   const [equityCurve, setEq]    = useState(null);
 
   // Form state
-  const [symbol, setSymbol]   = useState('RELIANCE.NS');
+  const [symbol, setSymbol]   = useState('AAPL');
   const [start, setStart]     = useState('2023-01-01');
   const [end, setEnd]         = useState('2024-01-01');
   const [capital, setCapital] = useState('100000');
@@ -553,8 +607,9 @@ function BacktestTab() {
               className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-brand" />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Capital</label>
+            <label className="block text-xs text-gray-500 mb-1">Capital (USD)</label>
             <input value={capital} onChange={e => setCapital(e.target.value)}
+              placeholder="100000"
               className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm w-28 focus:outline-none focus:border-brand" />
           </div>
           <button type="submit" disabled={submitting}
@@ -796,112 +851,6 @@ function TradeSetupTab() {
 
   return (
     <div className="p-4 space-y-4 max-w-3xl">
-
-      {/* Live Alpaca Holdings */}
-      <Card title="Your Alpaca Portfolio">
-        <p className="text-xs text-gray-500 mb-3">
-          Fetch your live holdings from Alpaca to see your current positions.
-        </p>
-        <button
-          onClick={fetchLiveHoldings}
-          disabled={loadingLive}
-          className="bg-brand hover:bg-brand-dark disabled:opacity-50 text-white px-4 py-2 rounded text-sm font-medium transition-colors flex items-center gap-2"
-        >
-          {loadingLive ? <><Spinner /> Fetching…</> : 'Fetch Live Holdings'}
-        </button>
-        {liveErr && <p className="text-red-400 text-xs mt-2">{liveErr}</p>}
-
-        {liveHoldings && (
-          <div className="mt-4 space-y-3">
-            {liveHoldings.note && (
-              <p className="text-yellow-400 text-xs">{liveHoldings.note}</p>
-            )}
-            {liveHoldings.holdings && liveHoldings.holdings.length > 0 && (
-              <div>
-                <p className="text-xs text-gray-500 mb-2 uppercase tracking-wider">Holdings</p>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="text-gray-500 border-b border-gray-800">
-                        <th className="text-left py-1 pr-3">Symbol</th>
-                        <th className="text-right pr-3">Qty</th>
-                        <th className="text-right pr-3">Avg Price</th>
-                        <th className="text-right pr-3">LTP</th>
-                        <th className="text-right pr-3">P&L</th>
-                        <th className="text-right">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {liveHoldings.holdings.map(h => (
-                        <tr key={h.symbol} className="border-b border-gray-800/40 hover:bg-gray-800/30">
-                          <td className="py-1 pr-3 font-medium text-white">{h.symbol}</td>
-                          <td className="text-right pr-3 text-gray-300">{h.quantity}</td>
-                          <td className="text-right pr-3 text-gray-300">${h.avg_price?.toFixed(2)}</td>
-                          <td className="text-right pr-3 text-gray-300">${h.last_price?.toFixed(2)}</td>
-                          <td className={`text-right pr-3 font-medium ${h.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                            {h.pnl >= 0 ? '+' : ''}${h.pnl?.toFixed(0)}
-                          </td>
-                          <td className="text-right">
-                            <button
-                              onClick={() => pickFromHolding(h.symbol)}
-                              className="text-brand hover:text-indigo-300 text-xs underline"
-                            >
-                              Select
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-            {liveHoldings.positions && liveHoldings.positions.length > 0 && (
-              <div>
-                <p className="text-xs text-gray-500 mb-2 uppercase tracking-wider">Current Positions</p>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="text-gray-500 border-b border-gray-800">
-                        <th className="text-left py-1 pr-3">Symbol</th>
-                        <th className="text-right pr-3">Qty</th>
-                        <th className="text-right pr-3">Avg Price</th>
-                        <th className="text-right pr-3">LTP</th>
-                        <th className="text-right pr-3">P&L</th>
-                        <th className="text-right">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {liveHoldings.positions.map(p => (
-                        <tr key={p.symbol} className="border-b border-gray-800/40 hover:bg-gray-800/30">
-                          <td className="py-1 pr-3 font-medium text-white">{p.symbol}</td>
-                          <td className="text-right pr-3 text-gray-300">{p.quantity}</td>
-                          <td className="text-right pr-3 text-gray-300">${p.avg_price?.toFixed(2)}</td>
-                          <td className="text-right pr-3 text-gray-300">${p.last_price?.toFixed(2)}</td>
-                          <td className={`text-right pr-3 font-medium ${p.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                            {p.pnl >= 0 ? '+' : ''}${p.pnl?.toFixed(0)}
-                          </td>
-                          <td className="text-right">
-                            <button
-                              onClick={() => pickFromHolding(p.symbol)}
-                              className="text-brand hover:text-indigo-300 text-xs underline"
-                            >
-                              Select
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-            {liveHoldings.holdings?.length === 0 && liveHoldings.positions?.length === 0 && !liveHoldings.note && (
-              <p className="text-gray-500 text-xs">No holdings or positions found in your Alpaca account.</p>
-            )}
-          </div>
-        )}
-      </Card>
 
       {/* Add Stock Form */}
       <Card title="Add Stock to Today's Trading">
@@ -1219,101 +1168,82 @@ function MarketSentimentTab() {
 // Tab: Settings
 // ---------------------------------------------------------------------------
 function SettingsTab({ health }) {
-  const [brokerMode,   setBrokerMode]   = useState(null);
-  const [modeMsg,      setModeMsg]      = useState('');
-  const [togglingMode, setTogglingMode] = useState(false);
-
-  // Load current broker mode
-  useEffect(() => {
-    apiFetch('/broker/status')
-      .then(r => r.json())
-      .then(d => setBrokerMode(d.broker_mode || 'paper'))
-      .catch(() => {});
-  }, []);
-
-  async function toggleMode() {
-    const target = brokerMode === 'live' ? 'paper' : 'live';
-    setTogglingMode(true);
-    setModeMsg('');
-    try {
-      const res  = await apiFetch('/broker/mode', {
-        method: 'POST',
-        body: JSON.stringify({ mode: target }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setBrokerMode(data.broker_mode);
-      } else {
-        setModeMsg(data.error || 'Failed to switch mode');
-      }
-    } catch {
-      setModeMsg('Network error');
-    } finally {
-      setTogglingMode(false);
-    }
-  }
-
   return (
     <div className="p-4 space-y-4 max-w-lg">
       <Card title="Alpaca Paper Trading">
         <div className="space-y-3 text-sm text-gray-300">
-          <p>
-            This system uses <strong className="text-white">Alpaca Paper Trading</strong> for US equities.
-            Paper trading simulates real orders without risking actual money.
-          </p>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="flex items-center justify-center w-12 h-12 rounded-full bg-gray-800">
+              <span className="text-2xl">📄</span>
+            </div>
+            <div>
+              <p className="font-medium text-white">Paper Trading Mode</p>
+              <p className="text-xs text-gray-500">Simulated trades — no real money</p>
+            </div>
+          </div>
+          
           <div className="bg-gray-800 border border-gray-700 rounded-lg p-3">
-            <p className="font-medium text-white mb-1">Setup Instructions:</p>
+            <p className="font-medium text-white mb-2">Current Status</p>
+            <div className="space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-gray-400">Mode:</span>
+                <span className="text-white font-medium">Paper Only</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">Broker:</span>
+                <span className="text-white">Alpaca Paper API</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-400">Live Trading:</span>
+                <span className="text-red-400">Not Available (v1)</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-gray-800 border border-gray-700 rounded-lg p-3">
+            <p className="font-medium text-white mb-1">Setup Instructions</p>
             <ol className="list-decimal ml-4 space-y-1 text-xs text-gray-400">
-              <li>Sign up for a free Alpaca account at <a href="https://alpaca.markets/" target="_blank" rel="noopener noreferrer" className="text-brand underline">alpaca.markets</a></li>
+              <li>Sign up for free at <a href="https://alpaca.markets/" target="_blank" rel="noopener noreferrer" className="text-brand underline">alpaca.markets</a></li>
               <li>Navigate to Paper Trading dashboard</li>
-              <li>Generate API keys (API Key ID + Secret Key)</li>
-              <li>Add keys to your <code className="bg-gray-900 px-1 rounded">ALPACA_API_KEY</code> and <code className="bg-gray-900 px-1 rounded">ALPACA_SECRET_KEY</code> environment variables</li>
-              <li>Restart the backend to activate paper trading</li>
+              <li>Generate API keys (Key ID + Secret Key)</li>
+              <li>Add to <code className="bg-gray-900 px-1 rounded">ALPACA_API_KEY</code> and <code className="bg-gray-900 px-1 rounded">ALPACA_SECRET_KEY</code> environment variables</li>
+              <li>Restart backend to activate</li>
             </ol>
           </div>
+          
           <p className="text-yellow-400 text-xs">
-            <strong>Note:</strong> Without Alpaca credentials, orders are logged locally but not sent to Alpaca's paper environment.
-            For realistic simulation, add your paper trading keys.
+            <strong>Note:</strong> Without Alpaca credentials, orders are logged locally but not sent to Alpaca.
+            For realistic simulation with fills and portfolio tracking, add your paper trading keys.
           </p>
         </div>
       </Card>
 
-      <Card title="Broker Mode">
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <span className={`text-sm font-bold px-3 py-1 rounded-full ${
-              brokerMode === 'live' ? 'bg-green-900 text-green-300' : 'bg-gray-800 text-gray-400'
-            }`}>
-              {brokerMode ? brokerMode.toUpperCase() : '…'}
-            </span>
-            <p className="text-xs text-gray-500 mt-2">
-              {brokerMode === 'live'
-                ? 'Live Alpaca trading (not implemented in v1 — paper only)'
-                : 'Paper trading — simulated trades, no real money'}
-            </p>
+      <Card title="System Information">
+        <div className="space-y-2 text-sm">
+          <div className="flex justify-between">
+            <span className="text-gray-400">Market:</span>
+            <span className="text-white">US Equities (NYSE/NASDAQ)</span>
           </div>
-          <button
-            onClick={toggleMode}
-            disabled={true}
-            className="px-4 py-2 rounded-lg text-sm font-medium transition-colors opacity-50 bg-gray-700 text-white cursor-not-allowed"
-          >
-            Paper Only
-          </button>
-        </div>
-        {modeMsg && (
-          <p className="text-red-400 text-xs mt-1">{modeMsg}</p>
-        )}
-        <p className="text-gray-500 text-xs mt-2">
-          This US adaptation is paper-only. Live Alpaca trading is not implemented in v1.
-        </p>
-      </Card>
-
-      <Card title="System Info">
-        <div className="text-sm space-y-1 text-gray-400">
-          <p>Status: <span className={`font-medium ${health?.status === 'ok' ? 'text-green-400' : 'text-yellow-400'}`}>{health?.status ?? '—'}</span></p>
-          <p>Kill Switch: <span className={`font-medium ${health?.kill_switch ? 'text-red-400' : 'text-green-400'}`}>{String(health?.kill_switch ?? '—')}</span></p>
-          <p>DB: <span className="text-gray-300">{health?.db ?? '—'}</span></p>
-          <p>Redis: <span className="text-gray-300">{health?.redis ?? '—'}</span></p>
+          <div className="flex justify-between">
+            <span className="text-gray-400">Trading Hours:</span>
+            <span className="text-white">09:30–16:00 ET</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-400">Currency:</span>
+            <span className="text-white">USD ($)</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-400">Model Status:</span>
+            <span className={health?.model_health?.is_healthy ? 'text-green-400' : 'text-red-400'}>
+              {health?.model_health?.is_healthy ? 'Healthy' : 'Degraded'}
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-400">Kill Switch:</span>
+            <span className={health?.kill_switch ? 'text-red-400' : 'text-green-400'}>
+              {health?.kill_switch ? 'ACTIVE' : 'OFF'}
+            </span>
+          </div>
         </div>
       </Card>
     </div>
