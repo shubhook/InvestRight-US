@@ -59,13 +59,16 @@ function LoginScreen({ onLogin }) {
         <h1 className="text-2xl font-bold text-center mb-2 text-brand">InvestRight-US</h1>
         <p className="text-gray-400 text-sm text-center mb-6">US Paper Trading Dashboard (Alpaca)</p>
         <form onSubmit={handleLogin} className="space-y-4">
-          <input
-            type="password"
-            placeholder="API Key"
-            value={apiKey}
-            onChange={e => setApiKey(e.target.value)}
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-brand"
-          />
+          <div>
+            <label className="block text-xs text-gray-400 mb-1.5">API Key</label>
+            <input
+              type="password"
+              placeholder="Your InvestRight API key"
+              value={apiKey}
+              onChange={e => setApiKey(e.target.value)}
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-sm focus:outline-none focus:border-brand"
+            />
+          </div>
           {error && <p className="text-red-400 text-sm">{error}</p>}
           <button
             type="submit"
