@@ -676,9 +676,48 @@ def watchlist_remove(symbol):
 @app.route("/portfolio", methods=["GET"])
 @require_auth
 def portfolio():
-    """Full portfolio summary — capital, P&L, positions, trade stats."""
+    """
+    Full portfolio summary — capital, P&L, positions, trade stats.
+    
+    If Alpaca keys configured, overlay paper account equity/cash onto capital.
+    Local positions/trades/pnl remain from DB ledger.
+    """
     from portfolio.pnl_calculator import get_portfolio_summary
-    return jsonify(get_portfolio_summary())
+    from broker.broker_factory import get_broker
+    
+    # Get local ledger summary
+    summary = get_portfolio_summary()
+    
+    # Try to overlay Alpaca paper account if keys available
+    try:
+        broker = get_broker()
+        if hasattr(broker, 'trading_client') and broker.trading_client:
+            alpaca_port = broker.get_portfolio()
+            
+            if alpaca_port.get("error") is None:
+                # Overlay Alpaca paper account onto capital
+                summary["capital"]["total_capital"] = alpaca_port["account_value"]
+                summary["capital"]["available_capital"] = alpaca_port["cash"]
+                summary["capital"]["source"] = "alpaca_paper"
+                
+                # Optionally include Alpaca holdings as extra field
+                if alpaca_port.get("holdings"):
+                    summary["alpaca_holdings"] = alpaca_port["holdings"]
+            else:
+                # Alpaca call failed, use local ledger
+                summary["capital"]["source"] = "local_ledger"
+        else:
+            # No Alpaca credentials, use local ledger
+            summary["capital"]["source"] = "local_ledger"
+    except Exception as e:
+        # Fail open: keep local numbers
+        logger.error(f"[PORTFOLIO] Alpaca overlay failed: {e}")
+        summary["capital"]["source"] = "local_ledger"
+    
+    # Alias for existing frontend (Desk reads total_realised_pnl)
+    summary["pnl"]["total_realised_pnl"] = summary["pnl"]["realised"]
+    
+    return jsonify(summary)
 
 
 @app.route("/portfolio/positions", methods=["GET"])
