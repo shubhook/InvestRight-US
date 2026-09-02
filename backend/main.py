@@ -417,6 +417,39 @@ def resume():
     })
 
 
+@app.route("/kill-switch", methods=["POST"])
+@require_auth
+def kill_switch_toggle():
+    """
+    Alias for /halt and /resume — frontend System segment calls this.
+    Body: { activate: true|false }
+    """
+    body = request.get_json(silent=True) or {}
+    activate = body.get("activate", False)
+    
+    if activate:
+        # Same as /halt
+        reason = body.get("reason", "no reason provided")
+        activated_by = body.get("activated_by", "unknown")
+        success = activate_kill_switch(reason, activated_by)
+        if not success:
+            return jsonify({"error": "Failed to activate kill switch"}), 500
+        return jsonify({
+            "status": "halted",
+            "message": "Kill switch activated",
+            "reason": reason,
+        })
+    else:
+        # Same as /resume
+        success = deactivate_kill_switch()
+        if not success:
+            return jsonify({"error": "Failed to deactivate kill switch"}), 500
+        return jsonify({
+            "status": "active",
+            "message": "Kill switch deactivated. Trading resumed.",
+        })
+
+
 # ---------------------------------------------------------------------------
 # Order endpoints
 # ---------------------------------------------------------------------------
@@ -812,6 +845,50 @@ def portfolio_pnl_daily():
     """Today's P&L summary."""
     from portfolio.pnl_calculator import get_daily_pnl
     return jsonify(get_daily_pnl())
+
+
+@app.route("/trades", methods=["GET"])
+@require_auth
+def trades_list():
+    """
+    Recent trades from DB — newest first.
+    Frontend Desk "Recent Fills" calls this.
+    """
+    limit = request.args.get("limit", default=5, type=int)
+    limit = max(1, min(limit, 50))  # cap at 50
+    
+    try:
+        from db.connection import db_cursor
+        with db_cursor() as cur:
+            cur.execute(
+                """
+                SELECT 
+                    t.trade_id, t.symbol, t.action, 
+                    COALESCE(p.quantity, 0) AS quantity,
+                    COALESCE(p.realised_pnl, 0) AS realised_pnl
+                FROM trades t
+                LEFT JOIN positions p ON t.trade_id = p.trade_id
+                ORDER BY t.timestamp DESC
+                LIMIT %s
+                """,
+                (limit,)
+            )
+            rows = cur.fetchall()
+        
+        trades = []
+        for row in rows:
+            trades.append({
+                "trade_id": str(row[0]),
+                "symbol": row[1],
+                "action": row[2],
+                "quantity": int(row[3]),
+                "realised_pnl": float(row[4]),
+            })
+        
+        return jsonify({"trades": trades})
+    except Exception as e:
+        logger.error(f"[API] /trades error: {e}")
+        return jsonify({"trades": []}), 200
 
 
 @app.route("/portfolio/summary", methods=["GET"])
