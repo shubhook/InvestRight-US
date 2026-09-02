@@ -146,7 +146,8 @@ def get_watchlist_symbols():
             return [r[0] for r in rows]
     except Exception as e:
         logger.warning(f"[SCHEDULER] Could not read watchlist from DB: {e}")
-    fallback = getattr(Config, 'SYMBOLS', ['RELIANCE.NS'])
+    # Load symbols from config or use US default watchlist
+    fallback = getattr(Config, 'SYMBOLS', ['AAPL', 'MSFT', 'GOOGL'])
     logger.info(f"[SCHEDULER] Watchlist empty — falling back to Config.SYMBOLS: {fallback}")
     return fallback
 
@@ -179,18 +180,18 @@ def run_scheduler():
     schedule.every(5).minutes.do(pending_trade_evaluation_job)
     logger.info("[SCHEDULER] Scheduled pending trade evaluation every 5 minutes")
 
-    # Daily P&L snapshot at market close (15:30 IST)
-    schedule.every().day.at("15:30").do(snapshot_job)
-    logger.info("[SCHEDULER] Scheduled daily P&L snapshot at 15:30 IST")
+    # Daily P&L snapshot at market close (16:00 ET = 21:00 UTC)
+    schedule.every().day.at("21:00").do(snapshot_job)
+    logger.info("[SCHEDULER] Scheduled daily P&L snapshot at 16:00 ET (21:00 UTC)")
 
-    # Maintenance jobs (IST times as UTC offset: IST = UTC+5:30)
-    # 02:00 IST = 20:30 UTC previous day — use UTC times for schedule
-    schedule.every().day.at("20:30").do(log_retention_job)
-    logger.info("[SCHEDULER] Scheduled log retention at 02:00 IST (20:30 UTC)")
+    # Maintenance jobs (ET times as UTC offset: ET = UTC-5/-4 depending on DST)
+    # 02:00 ET = 07:00 UTC (EST) or 06:00 UTC (EDT)
+    schedule.every().day.at("07:00").do(log_retention_job)
+    logger.info("[SCHEDULER] Scheduled log retention at 02:00 ET (07:00 UTC)")
 
-    # 03:00 IST = 21:30 UTC previous day
-    schedule.every().day.at("21:30").do(db_cleanup_job)
-    logger.info("[SCHEDULER] Scheduled DB cleanup at 03:00 IST (21:30 UTC)")
+    # 03:00 ET = 08:00 UTC (EST) or 07:00 UTC (EDT)
+    schedule.every().day.at("08:00").do(db_cleanup_job)
+    logger.info("[SCHEDULER] Scheduled DB cleanup at 03:00 ET (08:00 UTC)")
 
     # Run once immediately at startup
     degradation_check_job()
