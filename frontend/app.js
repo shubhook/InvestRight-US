@@ -257,18 +257,17 @@ function SegmentControl({ segment, setSegment }) {
 // ---------------------------------------------------------------------------
 function DeskSegment({ session }) {
   const [portfolio, setPortfolio] = useState(null);
-  const [positions, setPositions] = useState([]);
   const [trades, setTrades] = useState([]);
 
   useEffect(() => {
     apiFetch('/portfolio').then(r => r.json()).then(d => setPortfolio(d)).catch(() => {});
-    apiFetch('/portfolio/positions').then(r => r.json()).then(d => setPositions(d.positions || [])).catch(() => {});
     apiFetch('/trades?limit=5').then(r => r.json()).then(d => setTrades(d.trades || [])).catch(() => {});
   }, []);
 
   const isOpen = session?.is_rth || false;
   const cap = portfolio?.capital || {};
   const pnl = portfolio?.pnl || {};
+  const holdings = portfolio?.alpaca_holdings || [];
 
   return (
     <div className="p-6 space-y-6">
@@ -314,17 +313,21 @@ function DeskSegment({ session }) {
         <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#e8eef4', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }}>
           Positions
         </h3>
-        {positions.length === 0 ? (
+        {holdings.length === 0 ? (
           <p style={{ fontSize: '14px', color: '#8b9aab', fontStyle: 'italic' }}>
             No positions yet. Add a US ticker to the book.
           </p>
         ) : (
           <div className="space-y-2">
-            {positions.map(p => (
-              <div key={p.symbol} className="flex items-center justify-between py-2" style={{ borderBottom: '1px solid #2a3340' }}>
-                <span style={{ fontSize: '14px', fontWeight: '500', color: '#e8eef4' }}>{p.symbol}</span>
-                <span style={{ fontSize: '14px', color: (p.unrealised_pnl || 0) >= 0 ? '#34d399' : '#f87171' }}>
-                  {usd(p.unrealised_pnl)}
+            {holdings.map(h => (
+              <div key={h.symbol} className="flex items-center justify-between py-2" style={{ borderBottom: '1px solid #2a3340' }}>
+                <div className="flex items-center gap-3">
+                  <span style={{ fontSize: '14px', fontWeight: '500', color: '#e8eef4' }}>{h.symbol}</span>
+                  <span style={{ fontSize: '13px', color: '#8b9aab' }}>{h.quantity}</span>
+                  <span style={{ fontSize: '13px', color: '#8b9aab' }}>{usd(h.avg_entry_price)}</span>
+                </div>
+                <span style={{ fontSize: '14px', color: (h.unrealized_pl || 0) >= 0 ? '#34d399' : '#f87171' }}>
+                  {usd(h.unrealized_pl)}
                 </span>
               </div>
             ))}
@@ -485,6 +488,15 @@ function TradeSegment() {
 // System Segment
 // ---------------------------------------------------------------------------
 function SystemSegment({ killActive, setKillActive }) {
+  const [brokerStatus, setBrokerStatus] = useState(null);
+
+  useEffect(() => {
+    apiFetch('/broker/status')
+      .then(r => r.json())
+      .then(d => setBrokerStatus(d))
+      .catch(() => setBrokerStatus({ error: true }));
+  }, []);
+
   return (
     <div className="p-6 space-y-6">
       {/* Kill Switch */}
@@ -518,13 +530,28 @@ function SystemSegment({ killActive, setKillActive }) {
         <h3 style={{ fontSize: '13px', fontWeight: '600', color: '#e8eef4', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }}>
           Alpaca Paper Keys
         </h3>
-        <p style={{ fontSize: '14px', color: '#8b9aab', marginBottom: '8px' }}>
-          Set <code style={{ background: '#0f1419', padding: '2px 6px', borderRadius: '4px' }}>ALPACA_API_KEY</code> and{' '}
-          <code style={{ background: '#0f1419', padding: '2px 6px', borderRadius: '4px' }}>ALPACA_SECRET_KEY</code> in environment variables.
-        </p>
-        <p style={{ fontSize: '13px', color: '#fbbf24' }}>
-          Without keys, orders are logged locally but not sent to Alpaca.
-        </p>
+        {brokerStatus?.error ? (
+          <p style={{ fontSize: '14px', color: '#8b9aab', fontStyle: 'italic' }}>
+            broker status unavailable
+          </p>
+        ) : brokerStatus ? (
+          <>
+            <p style={{ fontSize: '14px', color: '#8b9aab', marginBottom: '8px' }}>
+              Keys: <strong style={{ color: brokerStatus.alpaca_keys_configured ? '#e8eef4' : '#8b9aab' }}>
+                {brokerStatus.alpaca_keys_configured ? 'yes' : 'no'}
+              </strong>
+            </p>
+            {brokerStatus.note && (
+              <p style={{ fontSize: '13px', color: '#8b9aab' }}>
+                {brokerStatus.note}
+              </p>
+            )}
+          </>
+        ) : (
+          <p style={{ fontSize: '14px', color: '#8b9aab', fontStyle: 'italic' }}>
+            Loading...
+          </p>
+        )}
       </div>
     </div>
   );
