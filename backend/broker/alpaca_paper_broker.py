@@ -32,9 +32,9 @@ class AlpacaPaperBroker(BaseBroker):
         self.paper = os.getenv("ALPACA_PAPER", "true").lower() == "true"
         
         if not self.api_key or not self.secret_key:
-            logger.warning(
-                "[ALPACA] API credentials not set — broker will operate in fallback mode "
-                "(orders logged to DB but not sent to Alpaca)"
+            logger.critical(
+                "[ALPACA] API credentials (ALPACA_API_KEY, ALPACA_SECRET_KEY) not set. "
+                "Paper orders will FAIL. Set credentials to place real Alpaca paper orders."
             )
             self.trading_client = None
             self.data_client = None
@@ -49,7 +49,7 @@ class AlpacaPaperBroker(BaseBroker):
                     api_key=self.api_key,
                     secret_key=self.secret_key
                 )
-                logger.info("[ALPACA] Paper trading client initialized successfully")
+                logger.info("[ALPACA] Paper trading client initialized (paper-api.alpaca.markets)")
             except Exception as e:
                 logger.error(f"[ALPACA] Failed to initialize trading client: {e}")
                 self.trading_client = None
@@ -70,28 +70,37 @@ class AlpacaPaperBroker(BaseBroker):
 
         order_id = str(uuid.uuid4())
 
-        # If no Alpaca client, fall back to simple paper mode
+        # Require Alpaca credentials for real paper orders
         if not self.trading_client:
-            return self._fallback_paper_order(order_params, order_id)
+            return self._failed(
+                "Alpaca API credentials not configured. Set ALPACA_API_KEY and ALPACA_SECRET_KEY.",
+                order_params,
+                order_id=order_id
+            )
 
         try:
             # Convert symbol to US format (remove any .NS/.BO suffixes)
             clean_symbol = symbol.split('.')[0].upper()
             
+            # Ensure quantity is integer for Alpaca
+            quantity = int(quantity)
+            if quantity <= 0:
+                return self._failed("Quantity must be at least 1 share", order_params, order_id=order_id)
+            
             side = OrderSide.BUY if action == "BUY" else OrderSide.SELL
             
-            # Place order with Alpaca
+            # Place order with Alpaca paper-api
             if order_type == "LIMIT":
                 limit_price = order_params.get("price") or order_params.get("entry")
                 if not limit_price:
-                    return self._failed("Limit order requires a price", order_params)
+                    return self._failed("Limit order requires a price", order_params, order_id=order_id)
                 
                 order_request = LimitOrderRequest(
                     symbol=clean_symbol,
                     qty=quantity,
                     side=side,
                     time_in_force=TimeInForce.DAY,
-                    limit_price=limit_price
+                    limit_price=float(limit_price)
                 )
             else:
                 order_request = MarketOrderRequest(
@@ -101,19 +110,31 @@ class AlpacaPaperBroker(BaseBroker):
                     time_in_force=TimeInForce.DAY
                 )
             
+            # Submit to Alpaca paper-api.alpaca.markets
             alpaca_order = self.trading_client.submit_order(order_request)
             
-            # Get fill price (for market orders, use LTP as estimate)
+            logger.info(
+                f"[ALPACA] Order submitted to paper-api: {action} {quantity}x {clean_symbol}, "
+                f"alpaca_id={alpaca_order.id}, status={alpaca_order.status}"
+            )
+            
+            # Map Alpaca status to our internal status
+            alpaca_status = str(alpaca_order.status).lower()
+            if alpaca_status in ["filled", "partially_filled"]:
+                status = "FILLED"
+            elif alpaca_status in ["rejected", "canceled", "cancelled"]:
+                status = "FAILED"
+            else:
+                status = "PENDING"
+            
+            filled_qty = int(alpaca_order.filled_qty) if alpaca_order.filled_qty else 0
+            
+            # Get fill price
             fill_price = None
             if alpaca_order.filled_avg_price:
                 fill_price = float(alpaca_order.filled_avg_price)
-            elif order_type == "LIMIT":
+            elif order_type == "LIMIT" and hasattr(order_request, 'limit_price'):
                 fill_price = float(order_request.limit_price)
-            else:
-                fill_price = self.get_ltp(clean_symbol)
-            
-            status = "FILLED" if alpaca_order.status in ["filled", "partially_filled"] else "PENDING"
-            filled_qty = int(alpaca_order.filled_qty) if alpaca_order.filled_qty else 0
             
             now = datetime.now(timezone.utc)
             with db_cursor() as cur:
@@ -137,8 +158,8 @@ class AlpacaPaperBroker(BaseBroker):
                 )
             
             logger.info(
-                f"[ALPACA] Order {status}: {action} {quantity}x {clean_symbol} @ {fill_price:.2f} "
-                f"(order_id={order_id}, alpaca_id={alpaca_order.id})"
+                f"[ALPACA] Real paper order {status}: {action} {quantity}x {clean_symbol}, "
+                f"alpaca_id={alpaca_order.id}, order_id={order_id}"
             )
             
             return {
@@ -155,6 +176,30 @@ class AlpacaPaperBroker(BaseBroker):
             return self._failed(f"Alpaca API error: {e}", order_params, order_id=order_id)
 
     def get_order_status(self, broker_order_id: str) -> dict:
+        # Try to fetch live status from Alpaca first
+        if self.trading_client:
+            try:
+                alpaca_order = self.trading_client.get_order_by_id(broker_order_id)
+                alpaca_status = str(alpaca_order.status).lower()
+                
+                if alpaca_status in ["filled", "partially_filled"]:
+                    status = "FILLED"
+                elif alpaca_status in ["rejected", "canceled", "cancelled"]:
+                    status = "CANCELLED"
+                else:
+                    status = "PENDING"
+                
+                return {
+                    "broker_order_id": broker_order_id,
+                    "status": status,
+                    "filled_quantity": int(alpaca_order.filled_qty) if alpaca_order.filled_qty else 0,
+                    "filled_price": float(alpaca_order.filled_avg_price) if alpaca_order.filled_avg_price else None,
+                    "failure_reason": None,
+                }
+            except Exception as e:
+                logger.warning(f"[ALPACA] Live status fetch failed, falling back to DB: {e}")
+        
+        # Fallback to DB
         try:
             with db_cursor() as cur:
                 cur.execute(
@@ -191,13 +236,16 @@ class AlpacaPaperBroker(BaseBroker):
             }
 
     def cancel_order(self, broker_order_id: str) -> bool:
+        if not self.trading_client:
+            logger.error("[ALPACA] Cannot cancel — no trading client initialized")
+            return False
+        
         try:
-            if self.trading_client:
-                try:
-                    self.trading_client.cancel_order_by_id(broker_order_id)
-                except Exception as e:
-                    logger.warning(f"[ALPACA] Cancel via API failed: {e}")
+            # Cancel via Alpaca API
+            self.trading_client.cancel_order_by_id(broker_order_id)
+            logger.info(f"[ALPACA] Cancelled order {broker_order_id} via paper-api")
             
+            # Update DB
             with db_cursor() as cur:
                 cur.execute(
                     "UPDATE orders SET status='CANCELLED', cancelled_at=%s, updated_at=%s "
@@ -289,59 +337,6 @@ class AlpacaPaperBroker(BaseBroker):
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
-
-    def _fallback_paper_order(self, order_params: dict, order_id: str) -> dict:
-        """Simple paper mode when Alpaca API is not available."""
-        action = order_params.get("action")
-        quantity = order_params.get("quantity", 0)
-        symbol = order_params.get("symbol", "").split('.')[0].upper()
-        trade_id = order_params.get("trade_id")
-        
-        ltp = self.get_ltp(symbol)
-        fill_price = ltp or order_params.get("price") or order_params.get("entry")
-        
-        if fill_price is None:
-            return self._failed("No price available for order", order_params, order_id=order_id)
-        
-        now = datetime.now(timezone.utc)
-        try:
-            with db_cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO orders (
-                        order_id, trade_id, symbol, action, order_type,
-                        quantity, price, status, filled_quantity, filled_price,
-                        broker_order_id, broker_mode, placed_at, filled_at, updated_at
-                    ) VALUES (
-                        %s, %s, %s, %s, %s,
-                        %s, %s, 'FILLED', %s, %s,
-                        %s, 'alpaca_paper', %s, %s, %s
-                    )
-                    """,
-                    (
-                        order_id, trade_id, symbol, action,
-                        order_params.get("order_type", "MARKET"),
-                        quantity, fill_price, quantity, fill_price,
-                        order_id, now, now, now,
-                    ),
-                )
-            
-            logger.info(
-                f"[ALPACA-FALLBACK] Order FILLED: {action} {quantity}x {symbol} @ {fill_price:.2f} "
-                f"(order_id={order_id})"
-            )
-            
-            return {
-                "order_id": order_id,
-                "broker_order_id": order_id,
-                "status": "FILLED",
-                "filled_price": fill_price,
-                "filled_quantity": quantity,
-                "failure_reason": None,
-            }
-        except Exception as e:
-            logger.error(f"[ALPACA-FALLBACK] Failed to insert order row: {e}")
-            return self._failed(f"DB error: {e}", order_params, order_id=order_id)
 
     def _failed(self, reason: str, order_params: dict, order_id: str = None) -> dict:
         oid = order_id or str(uuid.uuid4())
