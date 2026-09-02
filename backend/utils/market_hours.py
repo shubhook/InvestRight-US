@@ -58,7 +58,7 @@ def get_session() -> dict:
     # Determine next bell
     if is_rth:
         # Market is open, next bell is today's close at 16:00
-        next_bell_dt = datetime.combine(today, MARKET_CLOSE).replace(tzinfo=ET)
+        next_bell_dt = ET.localize(datetime.combine(today, MARKET_CLOSE))
     else:
         # Market is closed, find next open at 09:30
         # Look ahead up to 10 days to find next trading day
@@ -70,7 +70,7 @@ def get_session() -> dict:
             # Find next trading day
             for trading_date in schedule.index:
                 trading_day = trading_date.date()
-                open_time = datetime.combine(trading_day, MARKET_OPEN).replace(tzinfo=ET)
+                open_time = ET.localize(datetime.combine(trading_day, MARKET_OPEN))
                 
                 # If it's today and we haven't passed open time yet, use today
                 # Otherwise use the next trading day's open
@@ -79,10 +79,10 @@ def get_session() -> dict:
                     break
             else:
                 # Fallback: next business day at 09:30 (shouldn't happen with 10-day window)
-                next_bell_dt = datetime.combine(today + timedelta(days=1), MARKET_OPEN).replace(tzinfo=ET)
+                next_bell_dt = ET.localize(datetime.combine(today + timedelta(days=1), MARKET_OPEN))
         else:
             # Fallback if schedule lookup fails
-            next_bell_dt = datetime.combine(today + timedelta(days=1), MARKET_OPEN).replace(tzinfo=ET)
+            next_bell_dt = ET.localize(datetime.combine(today + timedelta(days=1), MARKET_OPEN))
     
     return {
         "et_iso": now_et.isoformat(),

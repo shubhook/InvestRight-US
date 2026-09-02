@@ -172,6 +172,16 @@ def health():
     return jsonify(status)
 
 
+@app.route("/session", methods=["GET"])
+def session():
+    """
+    Market session info: current ET time, RTH status, next bell.
+    No auth required (same as /health).
+    """
+    from utils.market_hours import get_session
+    return jsonify(get_session())
+
+
 @app.route("/token", methods=["POST"])
 def token():
     """Exchange API key for a JWT."""
