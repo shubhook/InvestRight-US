@@ -3,8 +3,8 @@ const { useState, useEffect, useRef, useCallback } = React;
 // ---------------------------------------------------------------------------
 // Config & Auth
 // ---------------------------------------------------------------------------
-// API routing: use /api for same-origin (nginx proxy in docker), or direct backend for local dev
-const API_BASE = window.location.port === '8080' ? 'http://localhost:5001' : '/api';
+// API routing: use /api for same-origin (nginx proxy in docker), or empty string for direct backend (run.sh → :5001)
+const API_BASE = window.location.port === '5001' ? '' : '/api';
 
 function getToken() { return localStorage.getItem('ir_token'); }
 function setToken(t) { localStorage.setItem('ir_token', t); }
@@ -542,10 +542,10 @@ function App() {
   useEffect(() => {
     if (!loggedIn) return;
     function loadSession() {
-      fetch('/api/session').then(r => r.json()).then(d => setSession(d)).catch(() => {});
+      fetch(`${API_BASE}/session`).then(r => r.json()).then(d => setSession(d)).catch(() => {});
     }
     function loadHealth() {
-      fetch('/api/health').then(r => r.json()).then(d => setKillActive(!!d.kill_switch)).catch(() => {});
+      fetch(`${API_BASE}/health`).then(r => r.json()).then(d => setKillActive(!!d.kill_switch)).catch(() => {});
     }
     loadSession();
     loadHealth();
