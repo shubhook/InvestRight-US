@@ -46,7 +46,7 @@ def degradation_check_job():
 
 
 def analysis_job(symbol):
-    """Run the full analysis pipeline for a symbol."""
+    """Run the full analysis pipeline for a symbol and persist cycle result."""
     if not is_market_open():
         logger.info(f"[SCHEDULER] Market closed — skipping analysis for {symbol}")
         return
@@ -57,10 +57,33 @@ def analysis_job(symbol):
         return
     logger.info(f"[SCHEDULER] Starting analysis job for: {symbol}")
     result = run(symbol)
+    decision = result.get('decision', 'ERROR')
     logger.info(
-        f"[SCHEDULER] Analysis done for {symbol}: "
-        f"{result.get('decision', 'ERROR')}"
+        f"[SCHEDULER] Analysis done for {symbol}: {decision}"
     )
+    
+    # Persist cycle result to DB
+    try:
+        from db.connection import db_cursor
+        executed = result.get('order_placed', False) or result.get('executed', False)
+        reason = result.get('reason', '') or result.get('rejection_reason', '')
+        
+        with db_cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO cycle_results (symbol, decision, executed, reason, ts)
+                VALUES (%s, %s, %s, %s, NOW())
+                ON CONFLICT (symbol) DO UPDATE SET
+                    decision = EXCLUDED.decision,
+                    executed = EXCLUDED.executed,
+                    reason = EXCLUDED.reason,
+                    ts = EXCLUDED.ts
+                """,
+                (symbol, decision, executed, reason)
+            )
+        logger.info(f"[SCHEDULER] Cycle result persisted for {symbol}: {decision}")
+    except Exception as e:
+        logger.error(f"[SCHEDULER] Failed to persist cycle result for {symbol}: {e}")
 
 
 def snapshot_job():
@@ -71,7 +94,7 @@ def snapshot_job():
 
 
 def log_retention_job():
-    """Delete aged rows from ephemeral log tables (runs at 02:00 IST)."""
+    """Delete aged rows from ephemeral log tables (runs at 02:00 ET)."""
     logger.info("[SCHEDULER] Running log retention")
     try:
         from maintenance.log_retention import run_retention
@@ -115,7 +138,7 @@ def pending_trade_evaluation_job():
 
 
 def db_cleanup_job():
-    """ANALYZE tables and reset stale backtest runs (runs at 03:00 IST)."""
+    """ANALYZE tables and reset stale backtest runs (runs at 03:00 ET)."""
     logger.info("[SCHEDULER] Running DB cleanup")
     try:
         from maintenance.db_cleanup import run_all
@@ -146,7 +169,8 @@ def get_watchlist_symbols():
             return [r[0] for r in rows]
     except Exception as e:
         logger.warning(f"[SCHEDULER] Could not read watchlist from DB: {e}")
-    fallback = getattr(Config, 'SYMBOLS', ['RELIANCE.NS'])
+    # Load symbols from config or use US default watchlist
+    fallback = getattr(Config, 'SYMBOLS', ['AAPL', 'MSFT', 'GOOGL'])
     logger.info(f"[SCHEDULER] Watchlist empty — falling back to Config.SYMBOLS: {fallback}")
     return fallback
 
@@ -161,36 +185,42 @@ def watchlist_analysis_job():
 
 def run_scheduler():
     """Set up and run the scheduler."""
+    import os
     from config import validate_required_env
     validate_required_env()
 
-    # Degradation check — runs every 5 min, BEFORE analysis
-    schedule.every(5).minutes.do(degradation_check_job)
+    # Get schedule interval from environment (default 5 minutes)
+    interval_minutes = int(os.getenv("SCHEDULE_MINUTES", "5"))
+    logger.info(f"[SCHEDULER] Using interval: {interval_minutes} minutes")
 
-    # Exit monitor — runs every 5 min, BEFORE analysis
-    schedule.every(5).minutes.do(exit_job)
+    # Degradation check — runs every interval, BEFORE analysis
+    schedule.every(interval_minutes).minutes.do(degradation_check_job)
+
+    # Exit monitor — runs every interval, BEFORE analysis
+    schedule.every(interval_minutes).minutes.do(exit_job)
 
     # Analysis pipeline — reads watchlist from DB each time, so adding/removing
     # symbols via the dashboard takes effect on the next cycle without a restart
-    schedule.every(5).minutes.do(watchlist_analysis_job)
-    logger.info("[SCHEDULER] Scheduled watchlist analysis every 5 minutes (dynamic)")
+    schedule.every(interval_minutes).minutes.do(watchlist_analysis_job)
+    logger.info(f"[SCHEDULER] Scheduled watchlist analysis every {interval_minutes} minutes (dynamic)")
 
-    # Pending trade evaluation — every 5 min during market hours
-    schedule.every(5).minutes.do(pending_trade_evaluation_job)
-    logger.info("[SCHEDULER] Scheduled pending trade evaluation every 5 minutes")
+    # Pending trade evaluation — every interval during market hours
+    schedule.every(interval_minutes).minutes.do(pending_trade_evaluation_job)
+    logger.info(f"[SCHEDULER] Scheduled pending trade evaluation every {interval_minutes} minutes")
 
-    # Daily P&L snapshot at market close (15:30 IST)
-    schedule.every().day.at("15:30").do(snapshot_job)
-    logger.info("[SCHEDULER] Scheduled daily P&L snapshot at 15:30 IST")
+    # Daily P&L snapshot at market close (16:00 ET)
+    # Note: Uses UTC time; will drift 1 hour during DST transitions
+    schedule.every().day.at("21:00").do(snapshot_job)
+    logger.info("[SCHEDULER] Scheduled daily P&L snapshot at 16:00 ET (21:00 UTC)")
 
-    # Maintenance jobs (IST times as UTC offset: IST = UTC+5:30)
-    # 02:00 IST = 20:30 UTC previous day — use UTC times for schedule
-    schedule.every().day.at("20:30").do(log_retention_job)
-    logger.info("[SCHEDULER] Scheduled log retention at 02:00 IST (20:30 UTC)")
+    # Maintenance jobs (ET times as UTC; will drift on DST)
+    # 02:00 ET = 07:00 UTC (EST) or 06:00 UTC (EDT)
+    schedule.every().day.at("07:00").do(log_retention_job)
+    logger.info("[SCHEDULER] Scheduled log retention at 02:00 ET (07:00 UTC)")
 
-    # 03:00 IST = 21:30 UTC previous day
-    schedule.every().day.at("21:30").do(db_cleanup_job)
-    logger.info("[SCHEDULER] Scheduled DB cleanup at 03:00 IST (21:30 UTC)")
+    # 03:00 ET = 08:00 UTC (EST) or 07:00 UTC (EDT)
+    schedule.every().day.at("08:00").do(db_cleanup_job)
+    logger.info("[SCHEDULER] Scheduled DB cleanup at 03:00 ET (08:00 UTC)")
 
     # Run once immediately at startup
     degradation_check_job()
@@ -205,4 +235,16 @@ def run_scheduler():
 
 
 if __name__ == "__main__":
+    # Fail-fast: verify database connection before starting scheduler
+    try:
+        from db.connection import db_cursor
+        with db_cursor() as cur:
+            cur.execute("SELECT 1")
+        logger.info("[SCHEDULER] Database connection verified")
+    except Exception as e:
+        logger.critical(f"[SCHEDULER] Database connection failed: {e}")
+        logger.critical("[SCHEDULER] Ensure PostgreSQL is running and DATABASE_URL is correct")
+        import sys
+        sys.exit(1)
+    
     run_scheduler()

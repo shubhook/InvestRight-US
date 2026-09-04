@@ -27,9 +27,9 @@ def calculate_quantity(
     Returns 0 when the result would be less than 1 share.
     """
     if total_capital <= 0:
-        logger.error(
-            "[ORDER_MGR] TOTAL_CAPITAL is zero or not set — "
-            "cannot calculate quantity. Returning 0."
+        logger.critical(
+            f"[ORDER_MGR] TOTAL_CAPITAL={total_capital} is zero or negative — "
+            "cannot calculate quantity. Set TOTAL_CAPITAL > 0 in environment. Returning 0."
         )
         return 0
     if not entry_price:

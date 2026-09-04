@@ -332,3 +332,12 @@ CREATE TABLE IF NOT EXISTS llm_calls (
     fallback_used     BOOLEAN DEFAULT FALSE,
     created_at        TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Cycle results — last decision per symbol
+CREATE TABLE IF NOT EXISTS cycle_results (
+    symbol          VARCHAR(20) PRIMARY KEY,
+    decision        VARCHAR(10) NOT NULL,
+    executed        BOOLEAN NOT NULL DEFAULT FALSE,
+    reason          TEXT,
+    ts              TIMESTAMPTZ DEFAULT NOW()
+);

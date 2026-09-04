@@ -13,3 +13,5 @@ PyJWT
 kiteconnect
 groq
 pytz
+alpaca-py
+pandas-market-calendars

@@ -11,7 +11,7 @@ from llm.llm_client import call_llm
 _logger = logging.getLogger("sentiment_agent")
 
 _SYSTEM_PROMPT = (
-    "You are a financial news sentiment classifier for Indian stock markets. "
+    "You are a financial news sentiment classifier for US cash equities. "
     "Classify the sentiment of the provided news headlines as it relates to "
     "the stock price movement. "
     "Respond ONLY with valid JSON. No explanation. No markdown."

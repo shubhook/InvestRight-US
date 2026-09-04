@@ -46,8 +46,13 @@ _JWT_EXPIRY_HOURS = int(os.getenv("JWT_EXPIRY_HOURS", 24))
 app = Flask(__name__)
 
 # CORS — allow origins from CORS_ORIGINS env var (comma-separated)
+# Explicitly allow Authorization and Content-Type headers for preflight
 _cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:8080")
-CORS(app, origins=[o.strip() for o in _cors_origins.split(",") if o.strip()])
+CORS(app, 
+     origins=[o.strip() for o in _cors_origins.split(",") if o.strip()],
+     allow_headers=["Authorization", "Content-Type"],
+     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+     supports_credentials=True)
 
 
 def _rate_limit_check(endpoint: str):
@@ -157,19 +162,25 @@ def health():
         status["model_health"] = {"is_healthy": True, "accuracy": None,
                                   "brier_score": None, "sample_size": 0}
 
-    # Kite token status — always included so UI shows connection state in any broker mode
-    try:
-        from auth.kite_token_refresh import is_token_valid, get_token_expiry
-        expiry = get_token_expiry()
-        status["kite_token"] = {
-            "valid":       is_token_valid(),
-            "valid_until": expiry.isoformat() if expiry else None,
-        }
-    except Exception:
-        status["kite_token"] = {"valid": False, "valid_until": None}
+    # Alpaca paper status for US trading
+    alpaca_key_set = bool(os.getenv("ALPACA_API_KEY") and os.getenv("ALPACA_SECRET_KEY"))
+    status["broker"] = {
+        "mode": os.getenv("BROKER_MODE", "paper"),
+        "alpaca_keys_configured": alpaca_key_set,
+    }
 
     status["status"] = overall
     return jsonify(status)
+
+
+@app.route("/session", methods=["GET"])
+def session():
+    """
+    Market session info: current ET time, RTH status, next bell.
+    No auth required (same as /health).
+    """
+    from utils.market_hours import get_session
+    return jsonify(get_session())
 
 
 @app.route("/token", methods=["POST"])
@@ -406,6 +417,39 @@ def resume():
     })
 
 
+@app.route("/kill-switch", methods=["POST"])
+@require_auth
+def kill_switch_toggle():
+    """
+    Alias for /halt and /resume — frontend System segment calls this.
+    Body: { activate: true|false }
+    """
+    body = request.get_json(silent=True) or {}
+    activate = body.get("activate", False)
+    
+    if activate:
+        # Same as /halt
+        reason = body.get("reason", "no reason provided")
+        activated_by = body.get("activated_by", "unknown")
+        success = activate_kill_switch(reason, activated_by)
+        if not success:
+            return jsonify({"error": "Failed to activate kill switch"}), 500
+        return jsonify({
+            "status": "halted",
+            "message": "Kill switch activated",
+            "reason": reason,
+        })
+    else:
+        # Same as /resume
+        success = deactivate_kill_switch()
+        if not success:
+            return jsonify({"error": "Failed to deactivate kill switch"}), 500
+        return jsonify({
+            "status": "active",
+            "message": "Kill switch deactivated. Trading resumed.",
+        })
+
+
 # ---------------------------------------------------------------------------
 # Order endpoints
 # ---------------------------------------------------------------------------
@@ -524,139 +568,33 @@ def broker_status():
     total_capital = float(os.getenv("TOTAL_CAPITAL", 0))
     halted        = is_trading_halted()
 
-    status = {
-        "broker_mode":   broker_mode,
-        "kill_switch":   halted,
-        "total_capital": total_capital,
-    }
+    alpaca_key_set    = bool(os.getenv("ALPACA_API_KEY") and os.getenv("ALPACA_SECRET_KEY"))
+    alpaca_paper_mode = os.getenv("ALPACA_PAPER", "true").lower() == "true"
 
-    if broker_mode == "live":
-        # Quick connectivity test
-        try:
-            from broker.kite_broker import _get_kite
-            kite = _get_kite()
-            kite.profile()
-            status["kite_connected"] = True
-        except Exception:
-            status["kite_connected"] = False
+    if alpaca_key_set:
+        note = "Alpaca paper trading via paper-api.alpaca.markets. Orders are real paper orders."
     else:
-        status["kite_connected"] = False
-        status["paper_note"] = "Running in paper trading mode. No real orders placed."
+        note = "Alpaca credentials not configured. Orders will fail until keys are set."
+
+    status = {
+        "broker_mode":              broker_mode,
+        "kill_switch":              halted,
+        "total_capital":            total_capital,
+        "alpaca_keys_configured":   alpaca_key_set,
+        "alpaca_paper":             alpaca_paper_mode,
+        "note": note
+    }
 
     return jsonify(status)
 
 
-@app.route("/broker/mode", methods=["POST"])
-@require_auth
-def set_broker_mode():
-    """
-    Switch broker mode at runtime — no restart required.
-    JSON body: { "mode": "live" | "paper" }
-    Switching to live is blocked if no valid Kite token exists.
-    """
-    body = request.get_json(silent=True) or {}
-    mode = (body.get("mode") or "").strip().lower()
-
-    if mode not in ("paper", "live"):
-        return jsonify({"error": "mode must be 'paper' or 'live'"}), 400
-
-    if mode == "live":
-        from auth.kite_token_refresh import is_token_valid
-        if not is_token_valid():
-            return jsonify({
-                "error": "No valid Kite token. Connect your Zerodha account first (Settings tab)."
-            }), 400
-
-    os.environ["BROKER_MODE"] = mode
-    logger.info(f"[API] Broker mode switched to: {mode}")
-    return jsonify({"broker_mode": mode})
 
 
-@app.route("/broker/kite/token", methods=["POST"])
-@require_auth
-def kite_store_token():
-    """
-    Store a new Kite access token.
-
-    JSON body:
-        access_token  (str, required)  — Kite access token from OAuth flow
-        request_token (str, optional)  — Kite request token (for audit)
-    """
-    body = request.get_json(silent=True) or {}
-    access_token  = (body.get("access_token") or "").strip()
-    request_token = (body.get("request_token") or "").strip()
-
-    if not access_token:
-        return jsonify({"error": "access_token is required"}), 400
-
-    from auth.kite_token_refresh import store_token, get_token_expiry
-    ok = store_token(access_token, request_token)
-    if not ok:
-        return jsonify({"error": "Failed to store token"}), 500
-
-    expiry = get_token_expiry()
-    return jsonify({
-        "stored":      True,
-        "valid_until": expiry.isoformat() if expiry else None,
-    })
 
 
 # ---------------------------------------------------------------------------
-# Kite OAuth endpoints (public — no auth required)
+# Watchlist endpoints (Kite OAuth endpoints removed for US paper trading)
 # ---------------------------------------------------------------------------
-
-@app.route("/kite/login", methods=["GET"])
-def kite_login_url():
-    """
-    Return the Zerodha login URL.
-    The frontend redirects the user here to kick off OAuth.
-    """
-    api_key = os.getenv("KITE_API_KEY")
-    if not api_key:
-        return jsonify({"error": "KITE_API_KEY not configured"}), 500
-    url = f"https://kite.zerodha.com/connect/login?api_key={api_key}&v=3"
-    return jsonify({"login_url": url})
-
-
-@app.route("/kite/callback", methods=["GET"])
-def kite_callback():
-    """
-    Zerodha redirects here after the user logs in.
-    Exchanges the one-time request_token for a persistent access_token.
-
-    Zerodha sends: ?request_token=XXX&status=success  (or status=error)
-    """
-    _frontend = os.getenv("FRONTEND_URL", "http://localhost:8080")
-
-    status        = request.args.get("status", "")
-    request_token = request.args.get("request_token", "").strip()
-
-    if status != "success" or not request_token:
-        logger.warning(f"[KITE_CALLBACK] Bad callback — status={status}")
-        return redirect(f"{_frontend}/?kite=failed")
-
-    try:
-        from kiteconnect import KiteConnect
-        api_key    = os.getenv("KITE_API_KEY")
-        api_secret = os.getenv("KITE_API_SECRET")
-
-        if not api_key or not api_secret:
-            logger.error("[KITE_CALLBACK] KITE_API_KEY or KITE_API_SECRET not set")
-            return redirect(f"{_frontend}/?kite=failed")
-
-        kite = KiteConnect(api_key=api_key)
-        session_data = kite.generate_session(request_token, api_secret=api_secret)
-        access_token = session_data["access_token"]
-
-        from auth.kite_token_refresh import store_token
-        store_token(access_token, request_token)
-
-        logger.info("[KITE_CALLBACK] Access token stored — Kite connected successfully")
-        return redirect(f"{_frontend}/?kite=connected")
-
-    except Exception as e:
-        logger.error(f"[KITE_CALLBACK] generate_session failed: {e}")
-        return redirect(f"{_frontend}/?kite=failed")
 
 
 # ---------------------------------------------------------------------------
@@ -771,9 +709,47 @@ def watchlist_remove(symbol):
 @app.route("/portfolio", methods=["GET"])
 @require_auth
 def portfolio():
-    """Full portfolio summary — capital, P&L, positions, trade stats."""
+    """
+    Full portfolio summary — capital, P&L, positions, trade stats.
+    
+    If Alpaca keys configured, overlay paper account equity/cash onto capital.
+    Local positions/trades/pnl remain from DB ledger.
+    """
     from portfolio.pnl_calculator import get_portfolio_summary
-    return jsonify(get_portfolio_summary())
+    from broker.broker_factory import get_broker
+    
+    # Get local ledger summary
+    summary = get_portfolio_summary()
+    
+    # Try to overlay Alpaca paper account if keys available
+    try:
+        broker = get_broker()
+        if hasattr(broker, 'trading_client') and broker.trading_client:
+            alpaca_port = broker.get_portfolio()
+            
+            if alpaca_port.get("error") is None:
+                # Overlay Alpaca paper account onto capital
+                summary["capital"]["total_capital"] = alpaca_port["account_value"]
+                summary["capital"]["available_capital"] = alpaca_port["cash"]
+                summary["capital"]["source"] = "alpaca_paper"
+                
+                # Always include Alpaca holdings field (empty list if none)
+                summary["alpaca_holdings"] = alpaca_port.get("holdings", [])
+            else:
+                # Alpaca call failed, use local ledger
+                summary["capital"]["source"] = "local_ledger"
+        else:
+            # No Alpaca credentials, use local ledger
+            summary["capital"]["source"] = "local_ledger"
+    except Exception as e:
+        # Fail open: keep local numbers
+        logger.error(f"[PORTFOLIO] Alpaca overlay failed: {e}")
+        summary["capital"]["source"] = "local_ledger"
+    
+    # Alias for existing frontend (Desk reads total_realised_pnl)
+    summary["pnl"]["total_realised_pnl"] = summary["pnl"]["realised"]
+    
+    return jsonify(summary)
 
 
 @app.route("/portfolio/positions", methods=["GET"])
@@ -851,28 +827,6 @@ def close_position_manual(position_id):
         return jsonify({"error": "Internal server error", "details": str(e)}), 500
 
 
-@app.route("/portfolio/live", methods=["GET"])
-@require_auth
-def portfolio_live():
-    """
-    Fetch live holdings and intraday positions directly from Zerodha.
-    Only works in live broker mode with a valid Kite token.
-    """
-    try:
-        from broker.broker_factory import get_broker
-        from broker.kite_broker import KiteBroker
-        broker = get_broker()
-        if not isinstance(broker, KiteBroker):
-            return jsonify({
-                "holdings":  [],
-                "positions": [],
-                "note":      "Live portfolio fetch only available in live broker mode.",
-            })
-        result = broker.get_portfolio()
-        return jsonify(result)
-    except Exception as e:
-        logger.error(f"[API] /portfolio/live error: {e}")
-        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/portfolio/pnl", methods=["GET"])
@@ -890,6 +844,143 @@ def portfolio_pnl_daily():
     """Today's P&L summary."""
     from portfolio.pnl_calculator import get_daily_pnl
     return jsonify(get_daily_pnl())
+
+
+@app.route("/trades", methods=["GET"])
+@require_auth
+def trades_list():
+    """
+    Recent trades from DB — newest first.
+    Frontend Desk "Recent Fills" calls this.
+    """
+    limit = request.args.get("limit", default=5, type=int)
+    limit = max(1, min(limit, 50))  # cap at 50
+    
+    try:
+        from db.connection import db_cursor
+        with db_cursor() as cur:
+            cur.execute(
+                """
+                SELECT 
+                    t.trade_id, t.symbol, t.action, 
+                    COALESCE(p.quantity, 0) AS quantity,
+                    COALESCE(p.realised_pnl, 0) AS realised_pnl
+                FROM trades t
+                LEFT JOIN positions p ON t.trade_id = p.trade_id
+                ORDER BY t.timestamp DESC
+                LIMIT %s
+                """,
+                (limit,)
+            )
+            rows = cur.fetchall()
+        
+        trades = []
+        for row in rows:
+            trades.append({
+                "trade_id": str(row[0]),
+                "symbol": row[1],
+                "action": row[2],
+                "quantity": int(row[3]),
+                "realised_pnl": float(row[4]),
+            })
+        
+        return jsonify({"trades": trades})
+    except Exception as e:
+        logger.error(f"[API] /trades error: {e}")
+        return jsonify({"trades": []}), 200
+
+
+@app.route("/cycle/last", methods=["GET"])
+@require_auth
+def cycle_last():
+    """
+    Last cycle results per symbol — read-only.
+    Returns { cycles: [{ symbol, decision, executed, reason, ts }] }
+    """
+    try:
+        from db.connection import db_cursor
+        with db_cursor() as cur:
+            cur.execute(
+                """
+                SELECT symbol, decision, executed, reason, ts
+                FROM cycle_results
+                ORDER BY ts DESC
+                """
+            )
+            rows = cur.fetchall()
+        
+        cycles = []
+        for row in rows:
+            cycles.append({
+                "symbol": row[0],
+                "decision": row[1],
+                "action": row[1],  # alias for frontend
+                "executed": row[2],
+                "reason": row[3],
+                "ts": row[4].isoformat() if row[4] else None,
+                "time": row[4].isoformat() if row[4] else None,  # alias for frontend
+            })
+        
+        return jsonify({"cycles": cycles})
+    except Exception as e:
+        logger.error(f"[API] /cycle/last error: {e}")
+        return jsonify({"cycles": []}), 200
+
+
+@app.route("/cycle/run", methods=["POST"])
+@require_auth
+def cycle_run():
+    """
+    Run watchlist analysis job once (in-process).
+    CAN place Alpaca paper orders if decision is BUY/SELL.
+    Returns { cycles: [...] } with results.
+    """
+    try:
+        from scheduler import get_watchlist_symbols, analysis_job
+        from db.connection import db_cursor
+        
+        symbols = get_watchlist_symbols()
+        if not symbols:
+            return jsonify({"cycles": [], "message": "Watchlist is empty"}), 200
+        
+        logger.info(f"[API] /cycle/run triggered for symbols: {symbols}")
+        
+        # Run analysis for each symbol
+        for symbol in symbols:
+            try:
+                analysis_job(symbol)
+            except Exception as e:
+                logger.error(f"[API] /cycle/run analysis_job({symbol}) error: {e}")
+        
+        # Read back the persisted cycle results
+        with db_cursor() as cur:
+            cur.execute(
+                """
+                SELECT symbol, decision, executed, reason, ts
+                FROM cycle_results
+                WHERE symbol = ANY(%s)
+                ORDER BY ts DESC
+                """,
+                (symbols,)
+            )
+            rows = cur.fetchall()
+        
+        cycles = []
+        for row in rows:
+            cycles.append({
+                "symbol": row[0],
+                "decision": row[1],
+                "action": row[1],
+                "executed": row[2],
+                "reason": row[3],
+                "ts": row[4].isoformat() if row[4] else None,
+                "time": row[4].isoformat() if row[4] else None,
+            })
+        
+        return jsonify({"cycles": cycles, "message": f"Cycle completed for {len(symbols)} symbols"})
+    except Exception as e:
+        logger.error(f"[API] /cycle/run error: {e}")
+        return jsonify({"error": str(e), "cycles": []}), 500
 
 
 @app.route("/portfolio/summary", methods=["GET"])
@@ -1349,5 +1440,18 @@ def run(symbol: str) -> dict:
 if __name__ == "__main__":
     from config import validate_required_env
     validate_required_env()
+    
+    # Fail-fast: verify database connection at startup
+    try:
+        from db.connection import db_cursor
+        with db_cursor() as cur:
+            cur.execute("SELECT 1")
+        logger.info("[STARTUP] Database connection verified")
+    except Exception as e:
+        logger.critical(f"[STARTUP] Database connection failed: {e}")
+        logger.critical("[STARTUP] Ensure PostgreSQL is running and DATABASE_URL is correct")
+        import sys
+        sys.exit(1)
+    
     debug_mode = os.getenv("FLASK_DEBUG", "false").lower() == "true"
     app.run(debug=debug_mode, host="0.0.0.0", port=5001)
