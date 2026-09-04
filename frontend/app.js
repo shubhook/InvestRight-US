@@ -392,18 +392,13 @@ function TradeSegment({ session }) {
 
   function loadCycle() {
     apiFetch('/cycle/last')
-      .then(r => {
-        if (!r.ok) {
-          if (r.status === 404) {
-            setCycleError('Cycle endpoint unavailable.');
-          }
-          return null;
+      .then(async r => {
+        const ct = (r.headers.get('content-type') || '').toLowerCase();
+        if (!r.ok || !ct.includes('application/json')) {
+          setCycleError('Cycle endpoint unavailable.');
+          return;
         }
-        return r.json();
-      })
-      .then(data => {
-        if (!data) return;
-        // Extract list from various possible shapes
+        const data = await r.json();
         const list = data.decisions || data.results || data.cycles || data.items || (Array.isArray(data) ? data : []);
         setLastCycle(list);
         setCycleError('');
@@ -418,14 +413,19 @@ function TradeSegment({ session }) {
     setCycleError('');
     try {
       const res = await apiFetch('/cycle/run', { method: 'POST' });
+      const ct = (res.headers.get('content-type') || '').toLowerCase();
+      if (!res.ok || !ct.includes('application/json')) {
+        setCycleError('Cycle endpoint unavailable.');
+        return;
+      }
       const data = await res.json();
-      if (!res.ok) {
-        setCycleError(data.error || 'Cycle run failed');
+      if (data.error) {
+        setCycleError(data.error);
       } else {
         loadCycle();
       }
     } catch (err) {
-      setCycleError(err.message || 'Network error');
+      setCycleError('Cycle endpoint unavailable.');
     } finally {
       setCycleRunning(false);
     }
